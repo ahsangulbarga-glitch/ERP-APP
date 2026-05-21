@@ -4,12 +4,12 @@ import { useEffect, useState, useCallback } from 'react'
 import { SessionUser, Document } from '@/types'
 import { canWrite } from '@/lib/rbac'
 import KPISummaryPanel from '@/components/shared/KPISummaryPanel'
-import { Plus, Download, FolderOpen, Pencil, X, Check, AlertTriangle } from 'lucide-react'
+import { Plus, Download, FolderOpen, Pencil, X, Check, AlertTriangle, ShieldCheck, Clock } from 'lucide-react'
 
-const STATUS_COLORS: Record<string, string> = {
-  Active: 'bg-green-100 text-green-700',
-  ExpiringSoon: 'bg-yellow-100 text-yellow-700',
-  Expired: 'bg-red-100 text-red-700',
+const STATUS_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  Active:       { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' },
+  ExpiringSoon: { bg: '#fffbeb', text: '#b45309', border: '#fde68a' },
+  Expired:      { bg: '#fef2f2', text: '#b91c1c', border: '#fecaca' },
 }
 
 export default function Tab6Documents({ user }: { user: SessionUser }) {
@@ -22,19 +22,21 @@ export default function Tab6Documents({ user }: { user: SessionUser }) {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const params = new URLSearchParams(Object.fromEntries(Object.entries(filters).filter(([, v]) => v)))
-    const res = await fetch(`/api/documents?${params}`)
-    const data = await res.json()
-    setRows(Array.isArray(data) ? data : [])
-    setLoading(false)
+    try {
+      const params = new URLSearchParams(Object.fromEntries(Object.entries(filters).filter(([, v]) => v)))
+      const res = await fetch(`/api/documents?${params}`)
+      const data = await res.json()
+      setRows(Array.isArray(data) ? data : [])
+    } catch { setRows([]) } finally { setLoading(false) }
   }, [filters])
 
   useEffect(() => { load() }, [load])
 
   const kpis = [
-    { label: 'Total Documents', value: rows.length, color: 'blue' as const },
-    { label: 'Expired', value: rows.filter(r => r.status === 'Expired').length, color: 'red' as const },
-    { label: 'Expiring in 30 Days', value: rows.filter(r => r.status === 'ExpiringSoon').length, color: 'orange' as const },
+    { label: 'Total Documents', value: rows.length, color: 'blue' as const, icon: <FolderOpen size={16} /> },
+    { label: 'Active', value: rows.filter(r => r.status === 'Active').length, color: 'green' as const, icon: <ShieldCheck size={16} /> },
+    { label: 'Expiring Soon', value: rows.filter(r => r.status === 'ExpiringSoon').length, color: 'orange' as const, icon: <Clock size={16} /> },
+    { label: 'Expired', value: rows.filter(r => r.status === 'Expired').length, color: 'red' as const, icon: <AlertTriangle size={16} /> },
   ]
 
   const handleSave = async () => {
@@ -49,110 +51,134 @@ export default function Tab6Documents({ user }: { user: SessionUser }) {
     window.open(`/api/export?${params}`)
   }
 
+  const openEdit = (row: Document) => {
+    setEditRow(row)
+    setForm({ documentName: row.documentName, documentOwner: row.documentOwner, category: row.category, department: row.department, issueDate: row.issueDate.split('T')[0], expiryDate: row.expiryDate.split('T')[0], remarks: row.remarks || '' })
+    setShowForm(true)
+  }
+
+  const formFields = [
+    { label: 'Document Name', key: 'documentName' },
+    { label: 'Document Owner (Email)', key: 'documentOwner', type: 'email' },
+    { label: 'Category', key: 'category' },
+    { label: 'Department', key: 'department' },
+    { label: 'Issue Date', key: 'issueDate', type: 'date' },
+    { label: 'Expiry Date', key: 'expiryDate', type: 'date' },
+  ]
+
   return (
     <div className="flex flex-col h-full">
       <KPISummaryPanel kpis={kpis} />
 
-      <div className="px-4 py-3 bg-white border-b border-slate-200">
-        <div className="flex flex-wrap gap-2">
-          <input type="text" placeholder="Category..." value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))} className="input-sm" />
-          <input type="text" placeholder="Department..." value={filters.department} onChange={e => setFilters(f => ({ ...f, department: e.target.value }))} className="input-sm" />
-          <input type="text" placeholder="Owner..." value={filters.owner} onChange={e => setFilters(f => ({ ...f, owner: e.target.value }))} className="input-sm" />
-          <select value={filters.expiryWindow} onChange={e => setFilters(f => ({ ...f, expiryWindow: e.target.value }))} className="input-sm">
-            <option value="">All Status</option>
-            <option value="active">Active</option>
-            <option value="expiring30">Expiring in 30 Days</option>
-            <option value="expired">Expired</option>
-          </select>
-        </div>
+      <div className="filter-bar">
+        <input type="text" placeholder="Category…" value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))} className="input-sm w-32" />
+        <input type="text" placeholder="Department…" value={filters.department} onChange={e => setFilters(f => ({ ...f, department: e.target.value }))} className="input-sm w-32" />
+        <input type="text" placeholder="Owner…" value={filters.owner} onChange={e => setFilters(f => ({ ...f, owner: e.target.value }))} className="input-sm w-32" />
+        <select value={filters.expiryWindow} onChange={e => setFilters(f => ({ ...f, expiryWindow: e.target.value }))} className="input-sm">
+          <option value="">All Status</option>
+          <option value="active">Active</option>
+          <option value="expiring30">Expiring in 30 Days</option>
+          <option value="expired">Expired</option>
+        </select>
+        {Object.values(filters).some(Boolean) && (
+          <button onClick={() => setFilters({ category: '', department: '', owner: '', expiryWindow: '' })}
+            className="text-xs text-red-400 hover:text-red-600 font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors">
+            ✕ Clear
+          </button>
+        )}
       </div>
 
-      <div className="px-4 py-2 flex gap-2 bg-white border-b border-slate-100">
-        {canWrite(user.role, 'documents') && (
-          <button onClick={() => { setShowForm(true); setEditRow(null) }} className="btn-primary flex items-center gap-1.5 text-sm"><Plus size={15} /> Add Document</button>
-        )}
-        <button onClick={handleExport} className="btn-outline flex items-center gap-1.5 text-sm"><Download size={15} /> Export</button>
+      <div className="section-header">
+        <div className="flex gap-2">
+          {canWrite(user.role, 'documents') && (
+            <button onClick={() => { setShowForm(true); setEditRow(null); setForm({ documentName: '', documentOwner: '', category: '', department: '', issueDate: '', expiryDate: '', remarks: '' }) }} className="btn-primary">
+              <Plus size={14} /> Add Document
+            </button>
+          )}
+          <button onClick={handleExport} className="btn-outline"><Download size={14} /> Export</button>
+        </div>
+        <span className="text-xs text-slate-400">{rows.length} document{rows.length !== 1 ? 's' : ''}</span>
       </div>
 
       <div className="flex-1 overflow-auto table-container">
-        {loading ? <div className="flex items-center justify-center h-40 text-slate-400">Loading…</div>
-          : rows.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-40 text-slate-400">
-              <FolderOpen size={32} className="mb-2 opacity-30" />
-              <p className="text-sm">No documents found</p>
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-600 text-xs uppercase sticky top-0">
-                <tr>
-                  {['Document', 'Owner', 'Category', 'Department', 'Issue Date', 'Expiry Date', 'Days Left', 'Status', 'Remarks', 'Actions'].map(h => (
-                    <th key={h} className="px-3 py-2.5 text-left font-medium whitespace-nowrap">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(row => (
-                  <tr key={row.id} className={`border-t border-slate-100 hover:bg-slate-50 ${row.status === 'Expired' ? 'bg-red-50/30' : ''}`}>
-                    <td className="px-3 py-2.5 font-medium flex items-center gap-1.5">
-                      {row.status !== 'Active' && <AlertTriangle size={12} className="text-yellow-500 shrink-0" />}
-                      {row.documentName}
+        {loading ? (
+          <div className="p-4 space-y-2">{[...Array(6)].map((_, i) => <div key={i} className="h-10 rounded-lg shimmer" />)}</div>
+        ) : rows.length === 0 ? (
+          <div className="empty-state"><FolderOpen size={36} className="opacity-20" /><p className="text-sm font-medium">No documents found</p></div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>{['Document', 'Owner', 'Category', 'Department', 'Issue Date', 'Expiry Date', 'Days Left', 'Status', 'Remarks', ''].map(h => <th key={h}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {rows.map(row => {
+                const s = STATUS_STYLES[row.status] || STATUS_STYLES.Active
+                const days = row.remainingDaysForExpiry
+                const daysColor = days < 0 ? '#b91c1c' : days <= 30 ? '#b45309' : '#15803d'
+                return (
+                  <tr key={row.id} style={row.status === 'Expired' ? { background: '#fef9f9' } : {}}>
+                    <td className="font-medium text-slate-800 whitespace-nowrap">
+                      <div className="flex items-center gap-1.5">
+                        {row.status !== 'Active' && <AlertTriangle size={11} style={{ color: row.status === 'Expired' ? '#dc2626' : '#d97706' }} className="shrink-0" />}
+                        {row.documentName}
+                      </div>
                     </td>
-                    <td className="px-3 py-2.5 text-slate-600">{row.documentOwner}</td>
-                    <td className="px-3 py-2.5 text-slate-600">{row.category}</td>
-                    <td className="px-3 py-2.5 text-slate-600">{row.department}</td>
-                    <td className="px-3 py-2.5 text-slate-500 text-xs">{new Date(row.issueDate).toLocaleDateString('en-GB')}</td>
-                    <td className="px-3 py-2.5 text-slate-500 text-xs">{new Date(row.expiryDate).toLocaleDateString('en-GB')}</td>
-                    <td className="px-3 py-2.5 text-center">
-                      <span className={`font-bold text-sm ${row.remainingDaysForExpiry < 0 ? 'text-red-600' : row.remainingDaysForExpiry <= 30 ? 'text-yellow-600' : 'text-green-600'}`}>
-                        {row.remainingDaysForExpiry < 0 ? `${Math.abs(row.remainingDaysForExpiry)}d ago` : `${row.remainingDaysForExpiry}d`}
+                    <td className="text-slate-500 text-xs">{row.documentOwner}</td>
+                    <td className="text-slate-500 text-xs">{row.category}</td>
+                    <td className="text-slate-500 text-xs">{row.department}</td>
+                    <td className="text-slate-400 text-xs whitespace-nowrap">{new Date(row.issueDate).toLocaleDateString('en-GB')}</td>
+                    <td className="text-slate-500 text-xs whitespace-nowrap">{new Date(row.expiryDate).toLocaleDateString('en-GB')}</td>
+                    <td>
+                      <span className="font-bold text-sm" style={{ color: daysColor }}>
+                        {days < 0 ? `${Math.abs(days)}d ago` : `${days}d`}
                       </span>
                     </td>
-                    <td className="px-3 py-2.5">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_COLORS[row.status] || ''}`}>{row.status}</span>
+                    <td>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full border inline-block whitespace-nowrap"
+                        style={{ background: s.bg, color: s.text, borderColor: s.border }}>{row.status}</span>
                     </td>
-                    <td className="px-3 py-2.5 max-w-[120px] truncate text-slate-500 text-xs">{row.remarks || '—'}</td>
-                    <td className="px-3 py-2.5">
+                    <td className="text-slate-400 text-xs max-w-[110px] truncate">{row.remarks || '—'}</td>
+                    <td>
                       {canWrite(user.role, 'documents') && (
-                        <button onClick={() => { setEditRow(row); setForm({ documentName: row.documentName, documentOwner: row.documentOwner, category: row.category, department: row.department, issueDate: row.issueDate.split('T')[0], expiryDate: row.expiryDate.split('T')[0], remarks: row.remarks || '' }); setShowForm(true) }} className="text-slate-400 hover:text-blue-600"><Pencil size={14} /></button>
+                        <button onClick={() => openEdit(row)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all">
+                          <Pencil size={13} />
+                        </button>
                       )}
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold">{editRow ? 'Edit Document' : 'Add Document'}</h3>
-              <button onClick={() => setShowForm(false)}><X size={18} className="text-slate-400" /></button>
+        <div className="modal-overlay">
+          <div className="modal-box">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="font-bold text-slate-800 text-base">{editRow ? 'Edit Document' : 'Add Document'}</h3>
+                <p className="text-xs text-slate-400 mt-0.5">{editRow ? `Editing ${editRow.documentName}` : 'Add a compliance document'}</p>
+              </div>
+              <button onClick={() => setShowForm(false)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"><X size={16} /></button>
             </div>
-            <div className="space-y-3">
-              {[
-                { label: 'Document Name', key: 'documentName' },
-                { label: 'Document Owner (Email)', key: 'documentOwner', type: 'email' },
-                { label: 'Category', key: 'category' },
-                { label: 'Department', key: 'department' },
-                { label: 'Issue Date', key: 'issueDate', type: 'date' },
-                { label: 'Expiry Date', key: 'expiryDate', type: 'date' },
-              ].map(({ label, key, type = 'text' }) => (
-                <div key={key}>
-                  <label className="text-xs font-medium text-slate-600">{label}</label>
-                  <input type={type} value={(form as Record<string, string>)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    className="w-full mt-0.5 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <div className="grid grid-cols-2 gap-3">
+              {formFields.map(({ label, key, type = 'text' }) => (
+                <div key={key} className={key === 'documentName' || key === 'documentOwner' ? 'col-span-2' : ''}>
+                  <label className="form-label">{label}</label>
+                  <input type={type} value={(form as Record<string, string>)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} className="form-input" />
                 </div>
               ))}
-              <div>
-                <label className="text-xs font-medium text-slate-600">Remarks</label>
-                <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} className="w-full mt-0.5 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none" />
+              <div className="col-span-2">
+                <label className="form-label">Remarks</label>
+                <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} className="form-input resize-none" />
               </div>
             </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setShowForm(false)} className="btn-outline text-sm">Cancel</button>
-              <button onClick={handleSave} className="btn-primary text-sm flex items-center gap-1.5"><Check size={14} /> Save</button>
+            <div className="flex justify-end gap-2 mt-5 pt-4" style={{ borderTop: '1px solid #f1f5f9' }}>
+              <button onClick={() => setShowForm(false)} className="btn-outline">Cancel</button>
+              <button onClick={handleSave} className="btn-primary"><Check size={14} /> Save Document</button>
             </div>
           </div>
         </div>

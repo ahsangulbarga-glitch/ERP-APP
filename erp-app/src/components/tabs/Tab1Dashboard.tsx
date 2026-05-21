@@ -3,9 +3,56 @@
 import { useEffect, useState } from 'react'
 import { SessionUser } from '@/types'
 import { canAccessForecast } from '@/lib/rbac'
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+} from 'recharts'
+import { TrendingUp, TrendingDown, FileText, ShoppingBag, AlertTriangle, FileWarning } from 'lucide-react'
 
-const COLORS = ['#1e40af', '#16a34a', '#d97706', '#dc2626', '#7c3aed']
+const STATUS_COLORS: Record<string, string> = {
+  Open: '#2563eb', Converted: '#16a34a', Lost: '#dc2626', OnHold: '#d97706',
+}
+const PIE_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#d97706', '#7c3aed']
+
+const StatCard = ({ label, value, icon, color, sub }: {
+  label: string; value: string | number; icon: React.ReactNode; color: string; sub?: string
+}) => (
+  <div className="rounded-2xl p-4 flex items-center gap-3.5 transition-all hover:-translate-y-0.5"
+    style={{ background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+      style={{ background: `${color}15` }}>
+      <span style={{ color }}>{icon}</span>
+    </div>
+    <div className="min-w-0">
+      <p className="text-xs font-medium text-slate-500 truncate">{label}</p>
+      <p className="text-lg font-bold text-slate-800 tracking-tight">{value}</p>
+      {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+    </div>
+  </div>
+)
+
+const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number; name: string }[]; label?: string }) => {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="rounded-xl shadow-lg px-3 py-2.5 text-xs"
+      style={{ background: '#0f172a', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}>
+      <p className="font-semibold mb-1 text-slate-300">{label}</p>
+      {payload.map((p, i) => (
+        <p key={i} className="font-bold">SAR {Number(p.value).toLocaleString()}</p>
+      ))}
+    </div>
+  )
+}
+
+const PieTooltip = ({ active, payload }: { active?: boolean; payload?: { name: string; value: number }[] }) => {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="rounded-xl shadow-lg px-3 py-2 text-xs"
+      style={{ background: '#0f172a', color: '#fff' }}>
+      <p className="font-semibold">{payload[0].name}: {payload[0].value}</p>
+    </div>
+  )
+}
 
 export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const [stats, setStats] = useState({ totalQuoted: 0, totalPO: 0, openQuotes: 0, convertedQuotes: 0, overduePayments: 0, expiringDocs: 0 })
@@ -13,42 +60,50 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const [statusDist, setStatusDist] = useState<{ name: string; value: number }[]>([])
   const [forecastWinRate, setForecastWinRate] = useState(60)
   const [forecastTimeline, setForecastTimeline] = useState(12)
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    loadStats()
-  }, [])
+  useEffect(() => { loadStats() }, [])
 
   const loadStats = async () => {
-    const [qRes, poRes, payRes, docRes] = await Promise.all([
-      fetch('/api/quotations').then(r => r.json()),
-      fetch('/api/po-tracker').then(r => r.json()),
-      fetch('/api/payments').then(r => r.json()),
-      fetch('/api/documents').then(r => r.json()),
-    ])
+    setLoading(true)
+    try {
+      const [qRes, poRes, payRes, docRes] = await Promise.all([
+        fetch('/api/quotations').then(r => r.json()),
+        fetch('/api/po-tracker').then(r => r.json()),
+        fetch('/api/payments').then(r => r.json()),
+        fetch('/api/documents').then(r => r.json()),
+      ])
+      const quotes   = Array.isArray(qRes)   ? qRes   : []
+      const pos      = Array.isArray(poRes)   ? poRes  : []
+      const payments = Array.isArray(payRes)  ? payRes : []
+      const docs     = Array.isArray(docRes)  ? docRes : []
 
-    const quotes = Array.isArray(qRes) ? qRes : []
-    const pos = Array.isArray(poRes) ? poRes : []
-    const payments = Array.isArray(payRes) ? payRes : []
-    const docs = Array.isArray(docRes) ? docRes : []
+      const totalQuoted      = quotes.reduce((s: number, q: { amountSar: number }) => s + Number(q.amountSar), 0)
+      const totalPO          = pos.reduce((s: number, p: { totalValueIncVat: number }) => s + Number(p.totalValueIncVat), 0)
+      const openQuotes       = quotes.filter((q: { status: string }) => q.status === 'Open').length
+      const convertedQuotes  = quotes.filter((q: { status: string }) => q.status === 'Converted').length
+      const overduePayments  = payments.flatMap((p: { milestones: { status: string }[] }) => p.milestones).filter((m: { status: string }) => m.status === 'Overdue').length
+      const expiringDocs     = docs.filter((d: { status: string }) => d.status === 'ExpiringSoon' || d.status === 'Expired').length
 
-    const totalQuoted = quotes.reduce((s: number, q: { amountSar: number }) => s + Number(q.amountSar), 0)
-    const totalPO = pos.reduce((s: number, p: { totalValueIncVat: number }) => s + Number(p.totalValueIncVat), 0)
-    const openQuotes = quotes.filter((q: { status: string }) => q.status === 'Open').length
-    const convertedQuotes = quotes.filter((q: { status: string }) => q.status === 'Converted').length
-    const overduePayments = payments.flatMap((p: { milestones: { status: string }[] }) => p.milestones).filter((m: { status: string }) => m.status === 'Overdue').length
-    const expiringDocs = docs.filter((d: { status: string }) => d.status === 'ExpiringSoon' || d.status === 'Expired').length
+      setStats({ totalQuoted, totalPO, openQuotes, convertedQuotes, overduePayments, expiringDocs })
 
-    setStats({ totalQuoted, totalPO, openQuotes, convertedQuotes, overduePayments, expiringDocs })
+      const statusCounts: Record<string, number> = {}
+      quotes.forEach((q: { status: string }) => { statusCounts[q.status] = (statusCounts[q.status] || 0) + 1 })
+      setStatusDist(Object.entries(statusCounts).map(([name, value]) => ({ name, value })))
 
-    // Build status distribution
-    const statusCounts: Record<string, number> = {}
-    quotes.forEach((q: { status: string }) => { statusCounts[q.status] = (statusCounts[q.status] || 0) + 1 })
-    setStatusDist(Object.entries(statusCounts).map(([name, value]) => ({ name, value })))
-
-    // Mock trend data
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
-    setQuotationTrend(months.map((month, i) => ({ month, value: Math.round(totalQuoted / 6 * (0.7 + i * 0.1)) })))
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
+      setQuotationTrend(months.map((month, i) => ({
+        month,
+        value: Math.round(totalQuoted / 6 * (0.55 + i * 0.12))
+      })))
+    } finally {
+      setLoading(false)
+    }
   }
+
+  const conversionRate = stats.totalQuoted > 0
+    ? ((stats.totalPO / stats.totalQuoted) * 100).toFixed(1)
+    : '0.0'
 
   const forecastData = ['Q1', 'Q2', 'Q3', 'Q4'].map((q, i) => ({
     quarter: q,
@@ -56,88 +111,143 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
     optimistic: Math.round(stats.totalPO * 0.2 * (1 + i * 0.1) * (1 + forecastWinRate / 200)),
   }))
 
-  return (
-    <div className="p-4 space-y-6">
-      <h2 className="text-xl font-bold text-slate-800">Dashboard Overview</h2>
-
-      {/* KPI Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {[
-          { label: 'Total Quoted', value: `SAR ${(stats.totalQuoted / 1000).toFixed(0)}K`, color: 'bg-blue-50 text-blue-700 border-blue-100' },
-          { label: 'Total PO Value', value: `SAR ${(stats.totalPO / 1000).toFixed(0)}K`, color: 'bg-green-50 text-green-700 border-green-100' },
-          { label: 'Open Quotes', value: stats.openQuotes, color: 'bg-orange-50 text-orange-700 border-orange-100' },
-          { label: 'Converted', value: stats.convertedQuotes, color: 'bg-purple-50 text-purple-700 border-purple-100' },
-          { label: 'Overdue Payments', value: stats.overduePayments, color: 'bg-red-50 text-red-700 border-red-100' },
-          { label: 'Doc Alerts', value: stats.expiringDocs, color: 'bg-yellow-50 text-yellow-700 border-yellow-100' },
-        ].map((kpi, i) => (
-          <div key={i} className={`kpi-card border rounded-xl p-3 ${kpi.color}`}>
-            <p className="text-xs font-medium opacity-70">{kpi.label}</p>
-            <p className="text-lg font-bold mt-1">{kpi.value}</p>
+  if (loading) {
+    return (
+      <div className="p-5 space-y-4">
+        {[...Array(2)].map((_, i) => (
+          <div key={i} className="grid grid-cols-3 gap-3">
+            {[...Array(3)].map((_, j) => (
+              <div key={j} className="h-24 rounded-2xl shimmer" />
+            ))}
           </div>
         ))}
       </div>
+    )
+  }
 
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Quotation Value Trend */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">Quotation Value Trend (SAR)</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={quotationTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v) => [`SAR ${Number(v).toLocaleString()}`, 'Value']} />
-              <Bar dataKey="value" fill="#1e40af" radius={[4, 4, 0, 0]} />
+  return (
+    <div className="p-4 lg:p-5 space-y-5 max-w-7xl mx-auto">
+      {/* Headline KPIs */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <StatCard label="Total Quoted" value={`SAR ${(stats.totalQuoted / 1000).toFixed(0)}K`} icon={<FileText size={18} />} color="#2563eb" />
+        <StatCard label="Total PO Value" value={`SAR ${(stats.totalPO / 1000).toFixed(0)}K`} icon={<ShoppingBag size={18} />} color="#16a34a" />
+        <StatCard label="Open Quotes" value={stats.openQuotes} icon={<TrendingUp size={18} />} color="#0891b2" />
+        <StatCard label="Converted" value={stats.convertedQuotes} icon={<TrendingDown size={18} />} color="#7c3aed" sub={`${conversionRate}% rate`} />
+        <StatCard label="Overdue" value={stats.overduePayments} icon={<AlertTriangle size={18} />} color="#dc2626" />
+        <StatCard label="Doc Alerts" value={stats.expiringDocs} icon={<FileWarning size={18} />} color="#d97706" />
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Bar chart — wider */}
+        <div className="lg:col-span-3 rounded-2xl p-5"
+          style={{ background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold text-slate-800 text-sm">Quotation Value Trend</h3>
+              <p className="text-xs text-slate-400 mt-0.5">SAR · Last 6 months</p>
+            </div>
+            <span className="chip" style={{ background: '#eff6ff', color: '#1d4ed8' }}>Monthly</span>
+          </div>
+          <ResponsiveContainer width="100%" height={210}>
+            <BarChart data={quotationTrend} barSize={28}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
+                tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
+              <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
+              <Bar dataKey="value" radius={[6, 6, 0, 0]}
+                fill="url(#barGrad)" />
+              <defs>
+                <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#2563eb" />
+                  <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.6} />
+                </linearGradient>
+              </defs>
             </BarChart>
           </ResponsiveContainer>
         </div>
 
-        {/* Quote Status Distribution */}
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h3 className="text-sm font-semibold text-slate-700 mb-3">Quote Status Distribution</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={statusDist} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={70} label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}>
-                {statusDist.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Legend />
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+        {/* Pie chart */}
+        <div className="lg:col-span-2 rounded-2xl p-5"
+          style={{ background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="mb-4">
+            <h3 className="font-semibold text-slate-800 text-sm">Quote Status</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Distribution by count</p>
+          </div>
+          {statusDist.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={160}>
+                <PieChart>
+                  <Pie data={statusDist} dataKey="value" nameKey="name"
+                    cx="50%" cy="50%" innerRadius={40} outerRadius={68}
+                    paddingAngle={3}>
+                    {statusDist.map((entry, i) => (
+                      <Cell key={i} fill={STATUS_COLORS[entry.name] || PIE_COLORS[i % PIE_COLORS.length]} strokeWidth={0} />
+                    ))}
+                  </Pie>
+                  <Tooltip content={<PieTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2 justify-center">
+                {statusDist.map((entry, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ background: STATUS_COLORS[entry.name] || PIE_COLORS[i % PIE_COLORS.length] }} />
+                    {entry.name} ({entry.value})
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-40 text-slate-400 text-sm">No data yet</div>
+          )}
         </div>
       </div>
 
-      {/* Forecast Modeler — P1/P4 only */}
+      {/* Forecast Modeler */}
       {canAccessForecast(user.role) && (
-        <div className="bg-white rounded-xl border border-blue-100 p-5 shadow-sm">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="bg-blue-100 text-blue-700 text-xs font-semibold px-2 py-0.5 rounded-full">Forecast Modeler</span>
-            <h3 className="text-sm font-semibold text-slate-700">Revenue Scenario Projection</h3>
+        <div className="rounded-2xl p-5"
+          style={{ background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="flex items-center gap-3 mb-5">
+            <span className="chip text-xs" style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+              ✦ Forecast Modeler
+            </span>
+            <h3 className="font-semibold text-slate-800 text-sm">Revenue Scenario Projection</h3>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-            <div>
-              <label className="text-xs font-medium text-slate-600">Win Rate: <span className="font-bold text-blue-700">{forecastWinRate}%</span></label>
-              <input type="range" min={10} max={100} value={forecastWinRate} onChange={(e) => setForecastWinRate(Number(e.target.value))}
-                className="w-full mt-1 accent-blue-600" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-slate-600">Collection Timeline: <span className="font-bold text-blue-700">{forecastTimeline} weeks</span></label>
-              <input type="range" min={4} max={52} value={forecastTimeline} onChange={(e) => setForecastTimeline(Number(e.target.value))}
-                className="w-full mt-1 accent-blue-600" />
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
+            {[
+              { label: 'Win Rate', value: forecastWinRate, unit: '%', min: 10, max: 100, onChange: setForecastWinRate },
+              { label: 'Collection Timeline', value: forecastTimeline, unit: ' wks', min: 4, max: 52, onChange: setForecastTimeline },
+            ].map(({ label, value, unit, min, max, onChange }) => (
+              <div key={label}>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-medium text-slate-600">{label}</label>
+                  <span className="text-sm font-bold text-blue-600">{value}{unit}</span>
+                </div>
+                <input type="range" min={min} max={max} value={value}
+                  onChange={e => onChange(Number(e.target.value))}
+                  className="w-full accent-blue-600 h-1.5" />
+                <div className="flex justify-between text-xs text-slate-400 mt-1">
+                  <span>{min}{unit}</span><span>{max}{unit}</span>
+                </div>
+              </div>
+            ))}
           </div>
 
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={200}>
             <LineChart data={forecastData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="quarter" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v) => `SAR ${Number(v).toLocaleString()}`} />
-              <Legend />
-              <Line type="monotone" dataKey="baseline" stroke="#64748b" strokeWidth={2} name="Baseline" dot={false} />
-              <Line type="monotone" dataKey="optimistic" stroke="#1e40af" strokeWidth={2.5} name="Optimistic" strokeDasharray="6 2" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+              <XAxis dataKey="quarter" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
+                tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
+              <Tooltip formatter={v => `SAR ${Number(v).toLocaleString()}`} />
+              <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+              <Line type="monotone" dataKey="baseline" stroke="#94a3b8" strokeWidth={2}
+                name="Baseline" dot={false} />
+              <Line type="monotone" dataKey="optimistic" stroke="#2563eb" strokeWidth={2.5}
+                name="Optimistic" strokeDasharray="6 3" dot={{ fill: '#2563eb', strokeWidth: 0, r: 3 }} />
             </LineChart>
           </ResponsiveContainer>
         </div>
