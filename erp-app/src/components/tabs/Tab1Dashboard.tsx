@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { SessionUser } from '@/types'
 import { canAccessForecast } from '@/lib/rbac'
-import PerformancePanel from '@/components/shared/PerformancePanel'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, LineChart, Legend,
@@ -671,9 +670,6 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
           </div>
         </Panel>
       )}
-
-      {/* ━━━ PERFORMANCE ANALYTICS ━━━ */}
-      <PerformancePanel user={user} />
 
     </div>
   )

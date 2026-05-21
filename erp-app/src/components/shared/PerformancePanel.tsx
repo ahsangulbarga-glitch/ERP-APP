@@ -603,10 +603,10 @@ function CEOView({ d }: { d: CEOData }) {
 /* ════════════════════════════════════════════════════════════════════
    MAIN EXPORT
 ════════════════════════════════════════════════════════════════════ */
-export default function PerformancePanel({ user }: { user: SessionUser }) {
+export default function PerformancePanel({ user, defaultExpanded = true }: { user: SessionUser; defaultExpanded?: boolean }) {
   const isViewer = ['P1_CEO', 'P2_ADMIN', 'P3_REGIONAL_MANAGER', 'P4_SALES_MANAGER'].includes(user.role)
 
-  const [expanded,   setExpanded]   = useState(true)
+  const [expanded,   setExpanded]   = useState(defaultExpanded)
   const [users,      setUsers]      = useState<PerfUser[]>([])
   const [selectedId, setSelectedId] = useState(user.id)
   const [perfData,   setPerfData]   = useState<PerfResponse | null>(null)
