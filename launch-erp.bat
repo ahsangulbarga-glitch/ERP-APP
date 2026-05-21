@@ -7,40 +7,59 @@ echo   ERP App - Local Development Server
 echo ============================================================
 echo.
 
-:: Navigate to repo root
+:: ── Step 0: Kill any existing Next.js server ─────────────────
+echo [0/4] Stopping any existing dev server...
+
+:: Kill processes on port 3000
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":3000 "') do (
+    if not "%%a"=="0" (
+        taskkill /F /PID %%a >nul 2>&1
+    )
+)
+
+:: Kill processes on port 3001 (fallback port Next.js sometimes uses)
+for /f "tokens=5" %%a in ('netstat -aon 2^>nul ^| findstr ":3001 "') do (
+    if not "%%a"=="0" (
+        taskkill /F /PID %%a >nul 2>&1
+    )
+)
+
+:: Give OS a moment to release file locks (including Prisma DLL)
+timeout /t 2 /nobreak >nul
+echo    Done.
+echo.
+
+:: ── Step 1: Pull latest code ──────────────────────────────────
 cd /d "C:\Users\Ahsan\OneDrive - Syed Contracting LLC\ERP-APP"
 
-:: Pull latest code
 echo [1/4] Pulling latest code from main...
 git pull origin main
 if %errorlevel% neq 0 (
     echo WARNING: git pull failed. Running on existing code.
-    echo.
 )
+echo.
 
-:: Navigate to app directory
+:: ── Step 2: Install dependencies ─────────────────────────────
 cd erp-app
 
-:: Install / update dependencies if package.json changed
-echo.
 echo [2/4] Checking dependencies...
 call npm install --prefer-offline
 if %errorlevel% neq 0 (
-    echo ERROR: npm install failed. Check your connection and try again.
+    echo ERROR: npm install failed.
     pause
     exit /b 1
 )
-
-:: Regenerate Prisma client in case schema changed
 echo.
+
+:: ── Step 3: Regenerate Prisma client ─────────────────────────
 echo [3/4] Syncing Prisma client...
 call npx prisma generate
 if %errorlevel% neq 0 (
     echo WARNING: prisma generate failed. Continuing anyway...
 )
-
-:: Start dev server
 echo.
+
+:: ── Step 4: Launch dev server ─────────────────────────────────
 echo [4/4] Starting Next.js dev server...
 echo.
 echo ============================================================
@@ -48,9 +67,10 @@ echo   App running at: http://localhost:3000
 echo   Press Ctrl+C to stop the server
 echo ============================================================
 echo.
+
 call npm run dev
 
 :: Keep window open if server exits unexpectedly
 echo.
-echo Server stopped.
+echo Server stopped unexpectedly.
 pause
