@@ -236,6 +236,16 @@ async function main() {
   console.log('   PO Tracker: 6')
   console.log('   Payments: 6 (with 17 milestones — 3 Overdue, 5 Paid, 9 Pending)')
   console.log('   Documents: 12 (4 ExpiringSoon, 1 Expired, 7 Active)')
+
+  // Copy seeded DB to the root dev.db (Next.js reads from there, Prisma writes to prisma/dev.db)
+  const fs = require('fs')
+  const path = require('path')
+  const src  = path.join(__dirname, 'dev.db')
+  const dest = path.join(__dirname, '..', 'dev.db')
+  if (fs.existsSync(src) && src !== dest) {
+    fs.copyFileSync(src, dest)
+    console.log('   ↳ Copied prisma/dev.db → dev.db ✓')
+  }
 }
 
 main()
