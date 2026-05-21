@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "$json = $input | ConvertFrom-Json; $f = if ($json.tool_input.file_path) { $json.tool_input.file_path } else { $json.tool_response.filePath }; if ($f) { Set-Location 'C:\\Users\\Ahsan\\OneDrive - Syed Contracting LLC\\ERP-APP'; git add -A; $name = [System.IO.Path]::GetFileName($f); git commit -m \"Auto-save: $name\" 2>&1 | Out-Null; git push 2>&1 | Out-Null }",
+            "statusMessage": "Pushing to GitHub...",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
