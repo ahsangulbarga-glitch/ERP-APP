@@ -7,7 +7,7 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts'
-import { TrendingUp, TrendingDown, FileText, ShoppingBag, AlertTriangle, FileWarning } from 'lucide-react'
+import { TrendingUp, TrendingDown, FileText, ShoppingBag, AlertTriangle, FileWarning, Receipt, Banknote, Clock } from 'lucide-react'
 
 const STATUS_COLORS: Record<string, string> = {
   Open: '#2563eb', Converted: '#16a34a', Lost: '#dc2626', OnHold: '#d97706',
@@ -55,7 +55,7 @@ const PieTooltip = ({ active, payload }: { active?: boolean; payload?: { name: s
 }
 
 export default function Tab1Dashboard({ user }: { user: SessionUser }) {
-  const [stats, setStats] = useState({ totalQuoted: 0, totalPO: 0, openQuotes: 0, convertedQuotes: 0, overduePayments: 0, expiringDocs: 0 })
+  const [stats, setStats] = useState({ totalQuoted: 0, totalPO: 0, openQuotes: 0, convertedQuotes: 0, overduePayments: 0, expiringDocs: 0, totalBilled: 0, totalCollected: 0, totalOutstanding: 0 })
   const [quotationTrend, setQuotationTrend] = useState<{ month: string; value: number }[]>([])
   const [statusDist, setStatusDist] = useState<{ name: string; value: number }[]>([])
   const [forecastWinRate, setForecastWinRate] = useState(60)
@@ -85,7 +85,11 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
       const overduePayments  = payments.flatMap((p: { milestones: { status: string }[] }) => p.milestones).filter((m: { status: string }) => m.status === 'Overdue').length
       const expiringDocs     = docs.filter((d: { status: string }) => d.status === 'ExpiringSoon' || d.status === 'Expired').length
 
-      setStats({ totalQuoted, totalPO, openQuotes, convertedQuotes, overduePayments, expiringDocs })
+      const totalBilled      = payments.reduce((s: number, p: { poValue: number }) => s + Number(p.poValue), 0)
+      const totalCollected   = payments.reduce((s: number, p: { poValue: number; collectionPct: number }) => s + Number(p.poValue) * (Number(p.collectionPct) / 100), 0)
+      const totalOutstanding = totalBilled - totalCollected
+
+      setStats({ totalQuoted, totalPO, openQuotes, convertedQuotes, overduePayments, expiringDocs, totalBilled, totalCollected, totalOutstanding })
 
       const statusCounts: Record<string, number> = {}
       quotes.forEach((q: { status: string }) => { statusCounts[q.status] = (statusCounts[q.status] || 0) + 1 })
@@ -127,14 +131,39 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
 
   return (
     <div className="p-4 lg:p-5 space-y-5 max-w-7xl mx-auto">
-      {/* Headline KPIs */}
+      {/* Headline KPIs — row 1: Quotations & Pipeline */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard label="Total Quoted" value={`SAR ${(stats.totalQuoted / 1000).toFixed(0)}K`} icon={<FileText size={18} />} color="#2563eb" />
         <StatCard label="Total PO Value" value={`SAR ${(stats.totalPO / 1000).toFixed(0)}K`} icon={<ShoppingBag size={18} />} color="#16a34a" />
         <StatCard label="Open Quotes" value={stats.openQuotes} icon={<TrendingUp size={18} />} color="#0891b2" />
         <StatCard label="Converted" value={stats.convertedQuotes} icon={<TrendingDown size={18} />} color="#7c3aed" sub={`${conversionRate}% rate`} />
-        <StatCard label="Overdue" value={stats.overduePayments} icon={<AlertTriangle size={18} />} color="#dc2626" />
+        <StatCard label="Overdue Milestones" value={stats.overduePayments} icon={<AlertTriangle size={18} />} color="#dc2626" />
         <StatCard label="Doc Alerts" value={stats.expiringDocs} icon={<FileWarning size={18} />} color="#d97706" />
+      </div>
+
+      {/* Headline KPIs — row 2: AR / Cash */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <StatCard
+          label="Total Billed"
+          value={`SAR ${(stats.totalBilled ?? 0).toLocaleString('en-SA', { maximumFractionDigits: 0 })}`}
+          icon={<Receipt size={18} />}
+          color="#0891b2"
+          sub="Sum of all PO values"
+        />
+        <StatCard
+          label="Total Collected"
+          value={`SAR ${(stats.totalCollected ?? 0).toLocaleString('en-SA', { maximumFractionDigits: 0 })}`}
+          icon={<Banknote size={18} />}
+          color="#16a34a"
+          sub={(stats.totalBilled ?? 0) > 0 ? `${(((stats.totalCollected ?? 0) / stats.totalBilled) * 100).toFixed(1)}% of billed` : 'No billings yet'}
+        />
+        <StatCard
+          label="Outstanding (AR)"
+          value={`SAR ${(stats.totalOutstanding ?? 0).toLocaleString('en-SA', { maximumFractionDigits: 0 })}`}
+          icon={<Clock size={18} />}
+          color={(stats.totalOutstanding ?? 0) > 0 ? '#dc2626' : '#16a34a'}
+          sub={(stats.totalBilled ?? 0) > 0 ? `${(((stats.totalOutstanding ?? 0) / stats.totalBilled) * 100).toFixed(1)}% unpaid` : ''}
+        />
       </div>
 
       {/* Charts */}
