@@ -72,7 +72,7 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const [forecastWinRate, setForecastWinRate] = useState(60)
   const [forecastTimeline, setForecastTimeline] = useState(12)
   const [loading, setLoading] = useState(true)
-  const [upcomingMilestones, setUpcomingMilestones] = useState<UpcomingMilestone[]>([])
+  const [allUnpaidMilestones, setAllUnpaidMilestones] = useState<UpcomingMilestone[]>([])
 
   useEffect(() => { loadStats() }, [])
 
@@ -116,7 +116,7 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
           })
       )
       allMilestones.sort((a, b) => a.daysUntilDue - b.daysUntilDue)
-      setUpcomingMilestones(allMilestones.slice(0, 5))
+      setAllUnpaidMilestones(allMilestones)
 
       const statusCounts: Record<string, number> = {}
       quotes.forEach((q: { status: string }) => { statusCounts[q.status] = (statusCounts[q.status] || 0) + 1 })
@@ -131,6 +131,9 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
       setLoading(false)
     }
   }
+
+  const overdueMilestones  = allUnpaidMilestones.filter(m => m.daysUntilDue < 0).slice(0, 5)
+  const upcomingMilestones = allUnpaidMilestones.filter(m => m.daysUntilDue >= 0).slice(0, 5)
 
   const conversionRate = stats.totalQuoted > 0
     ? ((stats.totalPO / stats.totalQuoted) * 100).toFixed(1)
@@ -193,89 +196,118 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
         />
       </div>
 
-      {/* Upcoming & Overdue Payment Milestones */}
-      <div className="rounded-2xl overflow-hidden"
-        style={{ background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5"
-          style={{ borderBottom: '1px solid #f1f5f9' }}>
-          <div className="flex items-center gap-2">
-            <CalendarClock size={16} className="text-blue-500" />
-            <h3 className="font-semibold text-slate-800 text-sm">Upcoming Payment Milestones</h3>
-            {upcomingMilestones.some(m => m.daysUntilDue < 0) && (
-              <span className="flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full"
-                style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
-                <Bell size={10} />
-                {upcomingMilestones.filter(m => m.daysUntilDue < 0).length} Overdue
-              </span>
-            )}
+      {/* Milestone Panels — Overdue + Upcoming side by side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* ── Overdue Alerts ── */}
+        <div className="rounded-2xl overflow-hidden"
+          style={{ background: '#fff', border: '1px solid #fecaca', boxShadow: '0 1px 6px rgba(220,38,38,0.08)' }}>
+          <div className="flex items-center justify-between px-5 py-3.5"
+            style={{ borderBottom: '1px solid #fef2f2', background: '#fff5f5' }}>
+            <div className="flex items-center gap-2">
+              <Bell size={15} className="text-red-500" />
+              <h3 className="font-semibold text-red-700 text-sm">Overdue Payments</h3>
+            </div>
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full"
+              style={{ background: overdueMilestones.length > 0 ? '#fecaca' : '#f0fdf4', color: overdueMilestones.length > 0 ? '#b91c1c' : '#15803d' }}>
+              {overdueMilestones.length > 0 ? `${overdueMilestones.length} alert${overdueMilestones.length > 1 ? 's' : ''}` : 'All clear'}
+            </span>
           </div>
-          <span className="text-xs text-slate-400">Next 5 due</span>
-        </div>
 
-        {upcomingMilestones.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-8 text-slate-400">
-            <CheckCircle2 size={18} className="text-green-400" />
-            <span className="text-sm">All milestones are up to date</span>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-50">
-            {upcomingMilestones.map((m, i) => {
-              const isOverdue = m.daysUntilDue < 0
-              const isDueSoon = !isOverdue && m.daysUntilDue <= 7
-              const accentColor = isOverdue ? '#dc2626' : isDueSoon ? '#d97706' : '#2563eb'
-              const bgColor     = isOverdue ? '#fef2f2' : isDueSoon ? '#fffbeb' : '#fff'
-              const dueLabel    = isOverdue
-                ? `${Math.abs(m.daysUntilDue)}d overdue`
-                : m.daysUntilDue === 0
-                ? 'Due today'
-                : `in ${m.daysUntilDue}d`
-
-              return (
-                <div key={m.id} className="flex items-center gap-4 px-5 py-3 transition-colors"
-                  style={{ background: bgColor }}>
-                  {/* Left accent bar */}
-                  <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: accentColor, minHeight: 36 }} />
-
-                  {/* Icon */}
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ background: `${accentColor}15` }}>
-                    {isOverdue
-                      ? <AlertTriangle size={14} style={{ color: accentColor }} />
-                      : <Clock size={14} style={{ color: accentColor }} />}
+          {overdueMilestones.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-slate-400">
+              <CheckCircle2 size={20} className="text-green-400" />
+              <span className="text-sm font-medium">No overdue milestones</span>
+            </div>
+          ) : (
+            <div className="divide-y" style={{ borderColor: '#fef2f2' }}>
+              {overdueMilestones.map(m => (
+                <div key={m.id} className="flex items-center gap-3 px-5 py-3" style={{ background: '#fef9f9' }}>
+                  <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: '#dc2626', minHeight: 36 }} />
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: '#fee2e2' }}>
+                    <AlertTriangle size={14} style={{ color: '#dc2626' }} />
                   </div>
-
-                  {/* Details */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm text-slate-800 truncate">{m.phaseName}</span>
-                      {isOverdue && (
-                        <span className="text-xs font-bold px-1.5 py-0.5 rounded"
-                          style={{ background: '#fecaca', color: '#b91c1c' }}>OVERDUE</span>
-                      )}
-                      {isDueSoon && !isOverdue && (
-                        <span className="text-xs font-bold px-1.5 py-0.5 rounded"
-                          style={{ background: '#fde68a', color: '#92400e' }}>DUE SOON</span>
-                      )}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-semibold text-sm text-slate-800">{m.phaseName}</span>
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded" style={{ background: '#fecaca', color: '#b91c1c' }}>OVERDUE</span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-0.5 truncate">
-                      <span className="font-mono text-xs" style={{ color: '#7c3aed' }}>{m.poNumber}</span>
-                      {' · '}{m.customerName}
+                    <p className="text-xs mt-0.5 truncate">
+                      <span className="font-mono" style={{ color: '#7c3aed' }}>{m.poNumber}</span>
+                      <span className="text-slate-400"> · {m.customerName}</span>
                     </p>
+                    <p className="text-xs text-slate-400 mt-0.5">Due: {new Date(m.dueDate).toLocaleDateString('en-GB')}</p>
                   </div>
-
-                  {/* Amount */}
                   <div className="text-right shrink-0">
-                    <p className="font-bold text-sm text-slate-800">
-                      SAR {m.amountSar.toLocaleString('en-SA', { maximumFractionDigits: 0 })}
-                    </p>
-                    <p className="text-xs font-semibold mt-0.5" style={{ color: accentColor }}>{dueLabel}</p>
+                    <p className="font-bold text-sm text-slate-800">SAR {m.amountSar.toLocaleString('en-SA', { maximumFractionDigits: 0 })}</p>
+                    <p className="text-xs font-semibold mt-0.5" style={{ color: '#dc2626' }}>{Math.abs(m.daysUntilDue)}d overdue</p>
                   </div>
                 </div>
-              )
-            })}
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Upcoming / Lined Up ── */}
+        <div className="rounded-2xl overflow-hidden"
+          style={{ background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+          <div className="flex items-center justify-between px-5 py-3.5"
+            style={{ borderBottom: '1px solid #f1f5f9', background: '#fafbfc' }}>
+            <div className="flex items-center gap-2">
+              <CalendarClock size={15} className="text-blue-500" />
+              <h3 className="font-semibold text-slate-700 text-sm">Next 5 Lined Up</h3>
+            </div>
+            <span className="text-xs text-slate-400">Upcoming payments</span>
           </div>
-        )}
+
+          {upcomingMilestones.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-slate-400">
+              <CheckCircle2 size={20} className="text-blue-300" />
+              <span className="text-sm font-medium">No upcoming milestones</span>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {upcomingMilestones.map((m, idx) => {
+                const isDueSoon = m.daysUntilDue <= 7
+                const isDueToday = m.daysUntilDue === 0
+                const accentColor = isDueToday ? '#dc2626' : isDueSoon ? '#d97706' : '#2563eb'
+                const dueLabel = isDueToday ? 'Due today' : `in ${m.daysUntilDue}d`
+
+                return (
+                  <div key={m.id} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                    {/* Rank badge */}
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                      style={{ background: `${accentColor}15`, color: accentColor }}>
+                      {idx + 1}
+                    </div>
+                    <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: accentColor, minHeight: 36 }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-semibold text-sm text-slate-800">{m.phaseName}</span>
+                        {isDueSoon && (
+                          <span className="text-xs font-bold px-1.5 py-0.5 rounded"
+                            style={{ background: isDueToday ? '#fecaca' : '#fde68a', color: isDueToday ? '#b91c1c' : '#92400e' }}>
+                            {isDueToday ? 'TODAY' : 'SOON'}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs mt-0.5 truncate">
+                        <span className="font-mono" style={{ color: '#7c3aed' }}>{m.poNumber}</span>
+                        <span className="text-slate-400"> · {m.customerName}</span>
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">Due: {new Date(m.dueDate).toLocaleDateString('en-GB')}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-sm text-slate-800">SAR {m.amountSar.toLocaleString('en-SA', { maximumFractionDigits: 0 })}</p>
+                      <p className="text-xs font-semibold mt-0.5" style={{ color: accentColor }}>{dueLabel}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* Charts */}
