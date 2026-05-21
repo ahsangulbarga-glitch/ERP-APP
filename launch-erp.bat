@@ -30,7 +30,7 @@ echo    Done.
 echo.
 
 :: ── Step 1: Pull latest code ──────────────────────────────────
-cd /d "C:\Users\Ahsan\OneDrive - Syed Contracting LLC\ERP-APP"
+cd /d "C:\Users\Ahsan\OneDrive - Syed Contracting LLC\Documents\ERP-APP"
 
 echo [1/4] Pulling latest code from main...
 git pull origin main
