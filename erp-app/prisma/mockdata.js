@@ -33,6 +33,16 @@ async function main() {
     update: {},
     create: { name: 'Nadia Yousef', email: 'nadia.finance@company.com', role: 'P6_INSIDE_SALES_ENGINEER', pinHash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', isActive: true },
   })
+  const accountant = await prisma.user.upsert({
+    where: { email: 'faisal.acc@company.com' },
+    update: {},
+    create: { name: 'Faisal Al-Otaibi', email: 'faisal.acc@company.com', role: 'P7_ACCOUNTANT', pinHash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', isActive: true },
+  })
+  const hr = await prisma.user.upsert({
+    where: { email: 'reem.hr@company.com' },
+    update: {},
+    create: { name: 'Reem Al-Zahrani', email: 'reem.hr@company.com', role: 'P8_HR', pinHash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', isActive: true },
+  })
 
   console.log('Users created.')
 
@@ -230,7 +240,7 @@ async function main() {
   console.log('Documents created.')
 
   console.log('\n✅ All mock data seeded successfully!')
-  console.log('   Users: 4 additional (KAE x2, SM x1, Finance x1) — PIN: 1234 for all')
+  console.log('   Users: 6 additional (KAE x2, SM x1, ISE x1, Accountant x1, HR x1) — PIN: 1234 for all')
   console.log('   Customers: 8')
   console.log('   Quotations: 15')
   console.log('   PO Tracker: 6')
