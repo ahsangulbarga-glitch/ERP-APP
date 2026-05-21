@@ -236,7 +236,7 @@ function ISEView({ d }: { d: ISEData }) {
                     <Cell key={i} fill={STATUS_COLORS[entry.status] || '#94a3b8'} strokeWidth={0} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: number) => `SAR ${v.toLocaleString('en-SA', { maximumFractionDigits: 0 })}`} />
+                <Tooltip formatter={(v) => typeof v === 'number' ? `SAR ${v.toLocaleString('en-SA', { maximumFractionDigits: 0 })}` : v} />
               </PieChart>
             </ResponsiveContainer>
             <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center mt-1">

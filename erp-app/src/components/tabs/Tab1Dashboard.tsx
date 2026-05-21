@@ -660,7 +660,7 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
                 <XAxis dataKey="quarter" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
                   tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-                <Tooltip formatter={(v: number) => `SAR ${Number(v).toLocaleString()}`} />
+                <Tooltip formatter={(v) => `SAR ${Number(v).toLocaleString()}`} />
                 <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
                 <Line type="monotone" dataKey="baseline"   stroke="#94a3b8" strokeWidth={2}   name="Baseline"   dot={false} />
                 <Line type="monotone" dataKey="optimistic" stroke="#2563eb" strokeWidth={2.5} name="Optimistic"
