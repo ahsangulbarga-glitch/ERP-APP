@@ -1,0 +1,197 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  role            String
+  pinHash         String
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String?
+
+  sessions        UserSession[]
+  quotations      Quotation[]        @relation("KAEQuotations")
+  customers       Customer[]         @relation("KAECustomers")
+  payments        Payment[]          @relation("KAEPayments")
+  auditLogs       AuditLog[]
+  adminOverrides  AdminOverrideLog[] @relation("AdminOverrides")
+  targetOverrides AdminOverrideLog[] @relation("TargetOverrides")
+}
+
+model UserSession {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  loginAt    DateTime  @default(now())
+  logoutAt   DateTime?
+  ipAddress  String?
+  deviceType String?
+  isActive   Boolean   @default(true)
+}
+
+model Quotation {
+  id                   String   @id @default(cuid())
+  qtRef                String   @unique
+  revisionNumber       Int      @default(0)
+  qtnDate              DateTime
+  customerName         String
+  projectName          String
+  amountSar            Float    @default(0)
+  status               String   @default("Open")
+  poNumber             String?
+  kaeAssignedId        String?
+  kaeAssigned          User?    @relation("KAEQuotations", fields: [kaeAssignedId], references: [id])
+  clientContactName    String?
+  clientContactDetails String?
+  remarks              String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdBy            String?
+
+  poTrackers           POTracker[]
+  payments             Payment[]
+  auditLogs            AuditLog[]  @relation("QuotationAudit")
+}
+
+model POTracker {
+  id                   String   @id @default(cuid())
+  customerName         String
+  projectName          String
+  kaeName              String?
+  qtRef                String?
+  quotation            Quotation? @relation(fields: [qtRef], references: [qtRef])
+  poNumber             String   @unique
+  poDate               DateTime
+  poAmountExVat        Float    @default(0)
+  vat15                Float    @default(0)
+  totalValueIncVat     Float    @default(0)
+  paymentTermsSplit    String?
+  paymentCollectionPct Float    @default(0)
+  paymentStatus        String   @default("Pending")
+  remarks              String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  createdBy            String?
+
+  auditLogs            AuditLog[] @relation("POAudit")
+}
+
+model Customer {
+  id                String    @id @default(cuid())
+  customerName      String
+  assignedKaeId     String?
+  assignedKae       User?     @relation("KAECustomers", fields: [assignedKaeId], references: [id])
+  totalRfq          Int       @default(0)
+  totalConverted    Int       @default(0)
+  completionPct     Float     @default(0)
+  totalValueQuoted  Float     @default(0)
+  totalPoValue      Float     @default(0)
+  firstActivityDate DateTime?
+  lastActivityDate  DateTime?
+  remarks           String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  createdBy         String?
+
+  auditLogs         AuditLog[] @relation("CustomerAudit")
+}
+
+model Payment {
+  id             String     @id @default(cuid())
+  poNumber       String
+  customerName   String
+  kaeNameId      String?
+  kaeName        User?      @relation("KAEPayments", fields: [kaeNameId], references: [id])
+  poValue        Float      @default(0)
+  collectionPct  Float      @default(0)
+  remarks        String?
+  quotationId    String?
+  quotation      Quotation? @relation(fields: [quotationId], references: [id])
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  createdBy      String?
+
+  milestones     PaymentMilestone[]
+  auditLogs      AuditLog[]         @relation("PaymentAudit")
+}
+
+model PaymentMilestone {
+  id         String   @id @default(cuid())
+  paymentId  String
+  payment    Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  phaseName  String
+  percentage Float    @default(0)
+  amountSar  Float    @default(0)
+  dueDate    DateTime
+  status     String   @default("Pending")
+  paidAt     DateTime?
+  alertSent  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Document {
+  id                    String   @id @default(cuid())
+  documentName          String
+  documentOwner         String
+  category              String
+  department            String
+  issueDate             DateTime
+  expiryDate            DateTime
+  remainingDaysForExpiry Int     @default(0)
+  status                String   @default("Active")
+  remarks               String?
+  alert30Sent           Boolean  @default(false)
+  alert15Sent           Boolean  @default(false)
+  alert7Sent            Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  createdBy             String?
+
+  auditLogs             AuditLog[] @relation("DocumentAudit")
+}
+
+model AuditLog {
+  id          String     @id @default(cuid())
+  timestamp   DateTime   @default(now())
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id])
+  userRole    String?
+  targetTable String
+  rowId       String
+  fieldName   String?
+  oldValue    String?
+  newValue    String?
+  action      String
+  quotationId String?
+  quotation   Quotation? @relation("QuotationAudit", fields: [quotationId], references: [id])
+  poId        String?
+  po          POTracker? @relation("POAudit", fields: [poId], references: [id])
+  customerId  String?
+  customer    Customer?  @relation("CustomerAudit", fields: [customerId], references: [id])
+  paymentId   String?
+  payment     Payment?   @relation("PaymentAudit", fields: [paymentId], references: [id])
+  documentId  String?
+  document    Document?  @relation("DocumentAudit", fields: [documentId], references: [id])
+}
+
+model AdminOverrideLog {
+  id           String   @id @default(cuid())
+  timestamp    DateTime @default(now())
+  adminId      String
+  admin        User     @relation("AdminOverrides", fields: [adminId], references: [id])
+  targetUserId String?
+  targetUser   User?    @relation("TargetOverrides", fields: [targetUserId], references: [id])
+  actionType   String
+  reason       String?
+  severity     String   @default("HIGH")
+}
