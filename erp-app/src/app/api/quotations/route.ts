@@ -22,8 +22,8 @@ export async function GET(req: NextRequest) {
   if (isKAERestrictedToOwnAccounts(session.user.role)) where.kaeAssignedId = session.user.id
   if (dateFrom || dateTo) where.qtnDate = { gte: dateFrom ? new Date(dateFrom) : undefined, lte: dateTo ? new Date(dateTo) : undefined }
   if (kaeId) where.kaeAssignedId = kaeId
-  if (customer) where.customerName = { contains: customer, mode: 'insensitive' }
-  if (qtRef) where.qtRef = { contains: qtRef, mode: 'insensitive' }
+  if (customer) where.customerName = { contains: customer }
+  if (qtRef) where.qtRef = { contains: qtRef }
   if (status) where.status = status
 
   const rows = await prisma.quotation.findMany({
@@ -40,14 +40,16 @@ export async function POST(req: NextRequest) {
   if (!canWrite(session.user.role, 'quotations')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json()
-  const { qtnDate, customerName, projectName, amountSar, status, kaeAssignedId, clientContactName, clientContactDetails, remarks, poNumber } = body
+  const { qtRef, qtnDate, customerName, projectName, amountSar, status, kaeAssignedId, clientContactName, clientContactDetails, remarks, poNumber } = body
 
-  // Auto-generate qtRef
-  const count = await prisma.quotation.count()
-  const qtRef = `QTN-${String(count + 1).padStart(5, '0')}-REV0`
+  if (!qtRef || !qtRef.trim()) return NextResponse.json({ error: 'QT Reference is required' }, { status: 400 })
+
+  // Check for duplicate qtRef
+  const existing = await prisma.quotation.findUnique({ where: { qtRef: qtRef.trim() } })
+  if (existing) return NextResponse.json({ error: `QT Reference "${qtRef}" already exists` }, { status: 409 })
 
   const quotation = await prisma.quotation.create({
-    data: { qtRef, qtnDate: new Date(qtnDate), customerName, projectName, amountSar, status: status || 'Open', poNumber, kaeAssignedId, clientContactName, clientContactDetails, remarks, createdBy: session.user.id },
+    data: { qtRef: qtRef.trim(), qtnDate: new Date(qtnDate), customerName, projectName, amountSar, status: status || 'Open', poNumber, kaeAssignedId, clientContactName, clientContactDetails, remarks, createdBy: session.user.id },
     include: { kaeAssigned: { select: { id: true, name: true, email: true } } },
   })
 

@@ -94,6 +94,6 @@ function buildWhere(filters: Record<string, string>, base: Record<string, unknow
     where[dateField] = { gte: filters.dateFrom ? new Date(filters.dateFrom) : undefined, lte: filters.dateTo ? new Date(filters.dateTo) : undefined }
   }
   if (filters.status) where.status = filters.status
-  if (filters.customer) where.customerName = { contains: filters.customer, mode: 'insensitive' }
+  if (filters.customer) where.customerName = { contains: filters.customer }
   return where
 }

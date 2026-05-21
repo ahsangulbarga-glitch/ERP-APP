@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const minConversion = searchParams.get('minConversion')
 
   if (isKAERestrictedToOwnAccounts(session.user.role)) where.assignedKaeId = session.user.id
-  if (search) where.customerName = { contains: search, mode: 'insensitive' }
+  if (search) where.customerName = { contains: search }
   if (kaeId) where.assignedKaeId = kaeId
   if (minConversion) where.completionPct = { gte: Number(minConversion) }
 

@@ -26,8 +26,8 @@ export async function GET(req: NextRequest) {
   const expiryWindow = searchParams.get('expiryWindow')
 
   if (category) where.category = category
-  if (department) where.department = { contains: department, mode: 'insensitive' }
-  if (owner) where.documentOwner = { contains: owner, mode: 'insensitive' }
+  if (department) where.department = { contains: department }
+  if (owner) where.documentOwner = { contains: owner }
   if (expiryWindow === 'expired') where.status = 'Expired'
   else if (expiryWindow === 'expiring30') where.status = 'ExpiringSoon'
   else if (expiryWindow === 'active') where.status = 'Active'

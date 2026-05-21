@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "erp-app",
+      "runtimeExecutable": "C:\\Users\\Ahsan\\ONEDRI~1\\ERP-APP\\erp-app\\START-~1.CMD",
+      "runtimeArgs": [],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}

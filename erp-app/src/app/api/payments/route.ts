@@ -17,8 +17,8 @@ export async function GET(req: NextRequest) {
   const kaeId = searchParams.get('kaeId')
   const milestoneStatus = searchParams.get('milestoneStatus')
 
-  if (poNumber) where.poNumber = { contains: poNumber, mode: 'insensitive' }
-  if (customer) where.customerName = { contains: customer, mode: 'insensitive' }
+  if (poNumber) where.poNumber = { contains: poNumber }
+  if (customer) where.customerName = { contains: customer }
   if (kaeId) where.kaeNameId = kaeId
 
   const rows = await prisma.payment.findMany({

@@ -19,15 +19,24 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
   const [filters, setFilters] = useState({ dateFrom: '', dateTo: '', kaeId: '', customer: '', qtRef: '', status: '' })
   const [showForm, setShowForm] = useState(false)
   const [editRow, setEditRow] = useState<Quotation | null>(null)
-  const [form, setForm] = useState({ qtnDate: '', customerName: '', projectName: '', amountSar: '', status: 'Open', kaeAssignedId: '', clientContactName: '', clientContactDetails: '', remarks: '', poNumber: '' })
+  const [formError, setFormError] = useState('')
+  const [form, setForm] = useState({ qtRef: '', qtnDate: '', customerName: '', projectName: '', amountSar: '', status: 'Open', kaeAssignedId: '', clientContactName: '', clientContactDetails: '', remarks: '', poNumber: '' })
 
   const load = useCallback(async () => {
     setLoading(true)
-    const params = new URLSearchParams(Object.fromEntries(Object.entries(filters).filter(([, v]) => v)))
-    const res = await fetch(`/api/quotations?${params}`)
-    const data = await res.json()
-    setRows(Array.isArray(data) ? data : [])
-    setLoading(false)
+    try {
+      const params = new URLSearchParams(Object.fromEntries(Object.entries(filters).filter(([, v]) => v)))
+      const res = await fetch(`/api/quotations?${params}`)
+      const text = await res.text()
+      if (!text) { setRows([]); return }
+      const data = JSON.parse(text)
+      setRows(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error('Failed to load quotations:', e)
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
   }, [filters])
 
   useEffect(() => { load() }, [load])
@@ -40,10 +49,16 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
   ]
 
   const handleSave = async () => {
+    setFormError('')
     const method = editRow ? 'PATCH' : 'POST'
     const body = editRow ? { id: editRow.id, ...form } : form
-    await fetch('/api/quotations', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    setShowForm(false); setEditRow(null)
+    const res = await fetch('/api/quotations', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Save failed' }))
+      setFormError(err.error || 'Save failed')
+      return
+    }
+    setShowForm(false); setEditRow(null); setFormError('')
     load()
   }
 
@@ -87,7 +102,7 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
       {/* Action Bar */}
       <div className="px-4 py-2 flex gap-2 bg-white border-b border-slate-100 flex-wrap">
         {canWrite(user.role, 'quotations') && (
-          <button onClick={() => { setShowForm(true); setEditRow(null) }} className="btn-primary flex items-center gap-1.5 text-sm">
+          <button onClick={() => { setShowForm(true); setEditRow(null); setFormError(''); setForm({ qtRef: '', qtnDate: '', customerName: '', projectName: '', amountSar: '', status: 'Open', kaeAssignedId: '', clientContactName: '', clientContactDetails: '', remarks: '', poNumber: '' }) }} className="btn-primary flex items-center gap-1.5 text-sm">
             <Plus size={15} /> New Quote
           </button>
         )}
@@ -148,7 +163,7 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
                   <td className="px-3 py-2.5 max-w-[140px] truncate text-slate-500 text-xs">{row.remarks || '—'}</td>
                   <td className="px-3 py-2.5">
                     {canWrite(user.role, 'quotations') && (
-                      <button onClick={() => { setEditRow(row); setForm({ qtnDate: row.qtnDate.split('T')[0], customerName: row.customerName, projectName: row.projectName, amountSar: String(row.amountSar), status: row.status, kaeAssignedId: row.kaeAssignedId || '', clientContactName: row.clientContactName || '', clientContactDetails: row.clientContactDetails || '', remarks: row.remarks || '', poNumber: row.poNumber || '' }); setShowForm(true) }}
+                      <button onClick={() => { setEditRow(row); setFormError(''); setForm({ qtRef: row.qtRef, qtnDate: row.qtnDate.split('T')[0], customerName: row.customerName, projectName: row.projectName, amountSar: String(row.amountSar), status: row.status, kaeAssignedId: row.kaeAssignedId || '', clientContactName: row.clientContactName || '', clientContactDetails: row.clientContactDetails || '', remarks: row.remarks || '', poNumber: row.poNumber || '' }); setShowForm(true) }}
                         className="text-slate-400 hover:text-blue-600">
                         <Pencil size={14} />
                       </button>
@@ -169,7 +184,22 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
               <h3 className="font-semibold text-slate-800">{editRow ? 'Edit Quotation' : 'New Quotation'}</h3>
               <button onClick={() => setShowForm(false)}><X size={18} className="text-slate-400" /></button>
             </div>
+            {formError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">{formError}</div>
+            )}
             <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-slate-600">QT Reference <span className="text-red-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. QTN-00016-REV0"
+                  value={form.qtRef}
+                  onChange={e => setForm(f => ({ ...f, qtRef: e.target.value.toUpperCase() }))}
+                  disabled={!!editRow}
+                  className={`w-full mt-0.5 px-3 py-2 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 ${editRow ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' : 'border-slate-200'}`}
+                />
+                {!editRow && <p className="text-xs text-slate-400 mt-0.5">Enter the reference number exactly as issued</p>}
+              </div>
               {[
                 { label: 'Date', key: 'qtnDate', type: 'date' },
                 { label: 'Customer Name', key: 'customerName', type: 'text' },

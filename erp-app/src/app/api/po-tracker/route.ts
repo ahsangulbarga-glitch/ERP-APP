@@ -19,9 +19,9 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get('status')
 
   if (dateFrom || dateTo) where.poDate = { gte: dateFrom ? new Date(dateFrom) : undefined, lte: dateTo ? new Date(dateTo) : undefined }
-  if (kae) where.kaeName = { contains: kae, mode: 'insensitive' }
-  if (customer) where.customerName = { contains: customer, mode: 'insensitive' }
-  if (poNumber) where.poNumber = { contains: poNumber, mode: 'insensitive' }
+  if (kae) where.kaeName = { contains: kae }
+  if (customer) where.customerName = { contains: customer }
+  if (poNumber) where.poNumber = { contains: poNumber }
   if (status) where.paymentStatus = status
 
   const rows = await prisma.pOTracker.findMany({ where, orderBy: { poDate: 'desc' } })
