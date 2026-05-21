@@ -61,3 +61,8 @@ export function getVisibleTabs(role: Role): string[] {
 export function isKAERestrictedToOwnAccounts(role: Role): boolean {
   return role === 'P5_KEY_ACCOUNT_ENGINEER'
 }
+
+export function canViewPerformanceAnalytics(role: Role): boolean {
+  // Every authenticated user can view their own performance
+  return true
+}
