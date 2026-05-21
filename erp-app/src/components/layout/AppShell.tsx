@@ -11,9 +11,11 @@ import Tab4Customers from '@/components/tabs/Tab4Customers'
 import Tab5Payments from '@/components/tabs/Tab5Payments'
 import Tab6Documents from '@/components/tabs/Tab6Documents'
 import TabUsers from '@/components/tabs/TabUsers'
+import TabPerformance from '@/components/tabs/TabPerformance'
+import { canViewPerformanceAnalytics } from '@/lib/rbac'
 import {
   LayoutDashboard, FileText, ShoppingCart, Users, CreditCard,
-  FolderOpen, LogOut, Menu, X, UserCog, ChevronRight,
+  FolderOpen, LogOut, Menu, X, UserCog, ChevronRight, BarChart2,
 } from 'lucide-react'
 
 const TABS = [
@@ -26,13 +28,14 @@ const TABS = [
 ]
 
 const PAGE_TITLES: Record<string, string> = {
-  dashboard: 'Dashboard Overview',
-  quotations: 'Quotations',
-  poTracker: 'PO Tracker',
-  customers: 'Customers',
-  payments: 'Payments',
-  documents: 'Documents',
-  users: 'User Management',
+  dashboard:   'Dashboard Overview',
+  quotations:  'Quotations',
+  poTracker:   'PO Tracker',
+  customers:   'Customers',
+  payments:    'Payments',
+  documents:   'Documents',
+  performance: 'Performance Analytics',
+  users:       'User Management',
 }
 
 export default function AppShell({ user }: { user: SessionUser }) {
@@ -57,6 +60,7 @@ export default function AppShell({ user }: { user: SessionUser }) {
       case 'payments':   return <Tab5Payments user={user} />
       case 'documents':  return <Tab6Documents user={user} />
       case 'users':      return <TabUsers user={user} />
+      case 'performance': return <TabPerformance user={user} />
       default:           return <Tab1Dashboard user={user} />
     }
   }
@@ -127,6 +131,9 @@ export default function AppShell({ user }: { user: SessionUser }) {
         <nav className="flex-1 py-3 px-2.5 space-y-0.5 overflow-y-auto">
           {visibleTabs.map(t => <NavItem key={t.id} {...t} />)}
 
+          {canViewPerformanceAnalytics(user.role) && (
+            <NavItem id="performance" label="Performance" icon={BarChart2} accent="#7c3aed" />
+          )}
           {canManageUsers(user.role) && (
             <NavItem id="users" label="User Mgmt" icon={UserCog} accent="#e11d48" />
           )}
