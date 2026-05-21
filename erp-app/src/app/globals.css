@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 :root {
   --bg: #f0f4f8;
@@ -213,27 +212,35 @@ body {
 }
 
 /* ── Table ── */
-.data-table { width: 100%; border-collapse: collapse; }
+.data-table { width: 100%; border-collapse: collapse; min-width: 700px; }
 .data-table thead tr {
   background: #f8fafc;
   border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 .data-table thead th {
-  padding: 0.625rem 0.875rem;
+  padding: 0.6rem 0.875rem;
   text-align: left;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   color: var(--text-muted);
   white-space: nowrap;
+  background: #f8fafc;
 }
 .data-table tbody tr {
   border-bottom: 1px solid var(--border-subtle);
   transition: background 0.1s;
 }
 .data-table tbody tr:hover { background: #f8fafc; }
-.data-table tbody td { padding: 0.625rem 0.875rem; }
+.data-table tbody td {
+  padding: 0.55rem 0.875rem;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+}
 
 /* ── Modal overlay ── */
 .modal-overlay {

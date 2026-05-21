@@ -113,7 +113,11 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
         ) : (
           <table className="data-table">
             <thead>
-              <tr>{['PO Number', 'Customer', 'Project', 'KAE', 'Date', 'Ex-VAT', 'VAT 15%', 'Inc-VAT', 'Collection', 'Status', 'Remarks', ''].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>
+                <th>PO Number</th><th>Customer</th><th>Project</th><th>KAE</th><th>Date</th>
+                <th className="text-right">Ex-VAT</th><th className="text-right">VAT 15%</th><th className="text-right">Inc-VAT</th>
+                <th>Collection</th><th>Status</th><th>Remarks</th><th></th>
+              </tr>
             </thead>
             <tbody>
               {rows.map(row => {
@@ -121,28 +125,28 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
                 const collPct = Number(row.paymentCollectionPct)
                 return (
                   <tr key={row.id}>
-                    <td className="font-mono text-xs font-semibold whitespace-nowrap" style={{ color: '#7c3aed' }}>{row.poNumber}</td>
-                    <td className="font-medium text-slate-800 whitespace-nowrap">{row.customerName}</td>
-                    <td className="text-slate-500 text-xs max-w-[130px] truncate">{row.projectName}</td>
-                    <td className="text-slate-500 text-xs whitespace-nowrap">{row.kaeName || '—'}</td>
-                    <td className="text-slate-500 text-xs whitespace-nowrap">{new Date(row.poDate).toLocaleDateString('en-GB')}</td>
-                    <td className="text-right text-slate-700 font-medium whitespace-nowrap">{Number(row.poAmountExVat).toLocaleString('en-SA', { minimumFractionDigits: 2 })}</td>
-                    <td className="text-right text-xs whitespace-nowrap" style={{ color: '#ea580c' }}>{Number(row.vat15).toLocaleString('en-SA', { minimumFractionDigits: 2 })}</td>
-                    <td className="text-right font-semibold text-slate-800 whitespace-nowrap">{Number(row.totalValueIncVat).toLocaleString('en-SA', { minimumFractionDigits: 2 })}</td>
-                    <td>
-                      <div className="flex items-center gap-1.5 min-w-[80px]">
-                        <div className="progress-bar flex-1" style={{ minWidth: 48 }}>
+                    <td className="font-mono text-xs font-bold" style={{ color: '#7c3aed', minWidth: 140 }}>{row.poNumber}</td>
+                    <td className="font-semibold text-slate-800" style={{ minWidth: 130 }}>{row.customerName}</td>
+                    <td className="text-slate-500 text-xs" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.projectName}</td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 90 }}>{row.kaeName || '—'}</td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 88 }}>{new Date(row.poDate).toLocaleDateString('en-GB')}</td>
+                    <td className="text-right text-slate-700 font-medium" style={{ minWidth: 110 }}>{Number(row.poAmountExVat).toLocaleString('en-SA', { minimumFractionDigits: 2 })}</td>
+                    <td className="text-right text-xs" style={{ color: '#ea580c', minWidth: 90 }}>{Number(row.vat15).toLocaleString('en-SA', { minimumFractionDigits: 2 })}</td>
+                    <td className="text-right font-semibold text-slate-800" style={{ minWidth: 110 }}>{Number(row.totalValueIncVat).toLocaleString('en-SA', { minimumFractionDigits: 2 })}</td>
+                    <td style={{ minWidth: 110 }}>
+                      <div className="flex items-center gap-1.5">
+                        <div className="progress-bar" style={{ flex: 1, minWidth: 48 }}>
                           <div className="progress-bar-fill" style={{ width: `${collPct}%`, background: collPct >= 100 ? '#16a34a' : collPct >= 50 ? '#2563eb' : '#ea580c' }} />
                         </div>
-                        <span className="text-xs text-slate-500 whitespace-nowrap">{collPct.toFixed(0)}%</span>
+                        <span className="text-xs text-slate-500">{collPct.toFixed(0)}%</span>
                       </div>
                     </td>
-                    <td>
-                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full border inline-block whitespace-nowrap"
+                    <td style={{ minWidth: 110 }}>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full border inline-block"
                         style={{ background: s.bg, color: s.text, borderColor: s.border }}>{row.paymentStatus}</span>
                     </td>
-                    <td className="text-slate-400 text-xs max-w-[100px] truncate">{row.remarks || '—'}</td>
-                    <td>
+                    <td className="text-slate-400 text-xs" style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.remarks || '—'}</td>
+                    <td style={{ minWidth: 36 }}>
                       {canWrite(user.role, 'poTracker') && (
                         <button onClick={() => openEdit(row)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all">
                           <Pencil size={13} />

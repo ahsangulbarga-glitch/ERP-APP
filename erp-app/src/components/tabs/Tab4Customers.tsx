@@ -103,7 +103,11 @@ export default function Tab4Customers({ user }: { user: SessionUser }) {
         ) : (
           <table className="data-table">
             <thead>
-              <tr>{['Customer', 'KAE', 'RFQs', 'Converted', 'Conversion', 'Quoted (SAR)', 'PO Value (SAR)', 'Last Activity', 'Remarks', ''].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>
+                <th>Customer</th><th>KAE</th><th>RFQs</th><th>Converted</th>
+                <th>Conversion</th><th className="text-right">Quoted (SAR)</th>
+                <th className="text-right">PO Value (SAR)</th><th>Last Activity</th><th>Remarks</th><th></th>
+              </tr>
             </thead>
             <tbody>
               {rows.map(row => {
@@ -111,22 +115,22 @@ export default function Tab4Customers({ user }: { user: SessionUser }) {
                 const barColor = pct >= 70 ? '#16a34a' : pct >= 40 ? '#2563eb' : '#ea580c'
                 return (
                   <tr key={row.id}>
-                    <td className="font-semibold text-slate-800">{row.customerName}</td>
-                    <td className="text-slate-500 text-xs">{row.assignedKae?.name || '—'}</td>
+                    <td className="font-semibold text-slate-800" style={{ minWidth: 140 }}>{row.customerName}</td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 90 }}>{row.assignedKae?.name || '—'}</td>
                     <td className="text-center text-slate-600">{row.totalRfq}</td>
                     <td className="text-center font-semibold" style={{ color: '#15803d' }}>{row.totalConverted}</td>
-                    <td>
-                      <div className="flex items-center gap-2 min-w-[90px]">
-                        <div className="progress-bar flex-1">
+                    <td style={{ minWidth: 110 }}>
+                      <div className="flex items-center gap-2">
+                        <div className="progress-bar" style={{ flex: 1, minWidth: 48 }}>
                           <div className="progress-bar-fill" style={{ width: `${pct}%`, background: barColor }} />
                         </div>
-                        <span className="text-xs text-slate-500 whitespace-nowrap">{Number(row.completionPct).toFixed(0)}%</span>
+                        <span className="text-xs text-slate-500">{Number(row.completionPct).toFixed(0)}%</span>
                       </div>
                     </td>
-                    <td className="text-right text-slate-600">{Number(row.totalValueQuoted).toLocaleString('en-SA', { maximumFractionDigits: 0 })}</td>
-                    <td className="text-right font-semibold text-slate-800">{Number(row.totalPoValue).toLocaleString('en-SA', { maximumFractionDigits: 0 })}</td>
-                    <td className="text-slate-400 text-xs whitespace-nowrap">{row.lastActivityDate ? new Date(row.lastActivityDate).toLocaleDateString('en-GB') : '—'}</td>
-                    <td className="text-slate-400 text-xs max-w-[110px] truncate">{row.remarks || '—'}</td>
+                    <td className="text-right text-slate-600" style={{ minWidth: 110 }}>{Number(row.totalValueQuoted).toLocaleString('en-SA', { maximumFractionDigits: 0 })}</td>
+                    <td className="text-right font-semibold text-slate-800" style={{ minWidth: 110 }}>{Number(row.totalPoValue).toLocaleString('en-SA', { maximumFractionDigits: 0 })}</td>
+                    <td className="text-slate-400 text-xs" style={{ minWidth: 90 }}>{row.lastActivityDate ? new Date(row.lastActivityDate).toLocaleDateString('en-GB') : '—'}</td>
+                    <td className="text-slate-400 text-xs" style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.remarks || '—'}</td>
                     <td>
                       {canWrite(user.role, 'customers') && (
                         <button onClick={() => { setEditRow(row); setForm({ customerName: row.customerName, assignedKaeId: row.assignedKaeId || '', firstActivityDate: row.firstActivityDate?.split('T')[0] || '', lastActivityDate: row.lastActivityDate?.split('T')[0] || '', remarks: row.remarks || '' }); setShowForm(true) }}

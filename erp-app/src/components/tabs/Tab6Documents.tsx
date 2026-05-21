@@ -108,7 +108,10 @@ export default function Tab6Documents({ user }: { user: SessionUser }) {
         ) : (
           <table className="data-table">
             <thead>
-              <tr>{['Document', 'Owner', 'Category', 'Department', 'Issue Date', 'Expiry Date', 'Days Left', 'Status', 'Remarks', ''].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>
+                <th>Document</th><th>Owner</th><th>Category</th><th>Department</th>
+                <th>Issue Date</th><th>Expiry Date</th><th>Days Left</th><th>Status</th><th>Remarks</th><th></th>
+              </tr>
             </thead>
             <tbody>
               {rows.map(row => {
@@ -117,27 +120,27 @@ export default function Tab6Documents({ user }: { user: SessionUser }) {
                 const daysColor = days < 0 ? '#b91c1c' : days <= 30 ? '#b45309' : '#15803d'
                 return (
                   <tr key={row.id} style={row.status === 'Expired' ? { background: '#fef9f9' } : {}}>
-                    <td className="font-medium text-slate-800 whitespace-nowrap">
+                    <td className="font-semibold text-slate-800" style={{ minWidth: 160 }}>
                       <div className="flex items-center gap-1.5">
                         {row.status !== 'Active' && <AlertTriangle size={11} style={{ color: row.status === 'Expired' ? '#dc2626' : '#d97706' }} className="shrink-0" />}
                         {row.documentName}
                       </div>
                     </td>
-                    <td className="text-slate-500 text-xs">{row.documentOwner}</td>
-                    <td className="text-slate-500 text-xs">{row.category}</td>
-                    <td className="text-slate-500 text-xs">{row.department}</td>
-                    <td className="text-slate-400 text-xs whitespace-nowrap">{new Date(row.issueDate).toLocaleDateString('en-GB')}</td>
-                    <td className="text-slate-500 text-xs whitespace-nowrap">{new Date(row.expiryDate).toLocaleDateString('en-GB')}</td>
-                    <td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 120 }}>{row.documentOwner}</td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 90 }}>{row.category}</td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 90 }}>{row.department}</td>
+                    <td className="text-slate-400 text-xs" style={{ minWidth: 88 }}>{new Date(row.issueDate).toLocaleDateString('en-GB')}</td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 88 }}>{new Date(row.expiryDate).toLocaleDateString('en-GB')}</td>
+                    <td style={{ minWidth: 70 }}>
                       <span className="font-bold text-sm" style={{ color: daysColor }}>
                         {days < 0 ? `${Math.abs(days)}d ago` : `${days}d`}
                       </span>
                     </td>
-                    <td>
-                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full border inline-block whitespace-nowrap"
+                    <td style={{ minWidth: 110 }}>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full border inline-block"
                         style={{ background: s.bg, color: s.text, borderColor: s.border }}>{row.status}</span>
                     </td>
-                    <td className="text-slate-400 text-xs max-w-[110px] truncate">{row.remarks || '—'}</td>
+                    <td className="text-slate-400 text-xs" style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.remarks || '—'}</td>
                     <td>
                       {canWrite(user.role, 'documents') && (
                         <button onClick={() => openEdit(row)}

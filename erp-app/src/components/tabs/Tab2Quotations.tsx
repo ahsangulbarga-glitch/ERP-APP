@@ -147,9 +147,16 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
           <table className="data-table">
             <thead>
               <tr>
-                {['QT Ref', 'Date', 'Customer', 'Project', 'Amount (SAR)', 'Status', 'KAE', 'Contact', 'PO No.', 'Remarks', ''].map(h => (
-                  <th key={h}>{h}</th>
-                ))}
+                <th>QT Ref</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Project</th>
+                <th className="text-right">Amount (SAR)</th>
+                <th>Status</th>
+                <th>KAE</th>
+                <th>Contact</th>
+                <th>Remarks</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -157,14 +164,14 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
                 const s = STATUS_STYLES[row.status]
                 return (
                   <tr key={row.id}>
-                    <td className="font-mono text-xs font-semibold" style={{ color: '#2563eb' }}>{row.qtRef}</td>
-                    <td className="text-slate-500 text-xs whitespace-nowrap">{new Date(row.qtnDate).toLocaleDateString('en-GB')}</td>
-                    <td className="font-medium text-slate-800 whitespace-nowrap">{row.customerName}</td>
-                    <td className="text-slate-500 text-xs max-w-[140px] truncate">{row.projectName}</td>
-                    <td className="text-right font-semibold text-slate-800 whitespace-nowrap">
+                    <td className="font-mono text-xs font-bold" style={{ color: '#2563eb', minWidth: 140 }}>{row.qtRef}</td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 90 }}>{new Date(row.qtnDate).toLocaleDateString('en-GB')}</td>
+                    <td className="font-semibold text-slate-800" style={{ minWidth: 140 }}>{row.customerName}</td>
+                    <td className="text-slate-500 text-xs" style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.projectName}</td>
+                    <td className="text-right font-semibold text-slate-800" style={{ minWidth: 120 }}>
                       {Number(row.amountSar).toLocaleString('en-SA', { minimumFractionDigits: 2 })}
                     </td>
-                    <td>
+                    <td style={{ minWidth: 110 }}>
                       {canWrite(user.role, 'quotations') ? (
                         <select value={row.status} onChange={e => handleStatusChange(row.id, e.target.value)}
                           className="text-xs font-semibold px-2.5 py-1 rounded-full border cursor-pointer outline-none transition-colors"
@@ -179,11 +186,10 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
                           style={{ background: s.bg, color: s.text, borderColor: s.border }}>{row.status}</span>
                       )}
                     </td>
-                    <td className="text-slate-500 text-xs whitespace-nowrap">{row.kaeAssigned?.name || '—'}</td>
-                    <td className="text-slate-500 text-xs whitespace-nowrap">{row.clientContactName || '—'}</td>
-                    <td className="text-slate-500 text-xs font-mono whitespace-nowrap">{row.poNumber || '—'}</td>
-                    <td className="text-slate-400 text-xs max-w-[120px] truncate">{row.remarks || '—'}</td>
-                    <td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 100 }}>{row.kaeAssigned?.name || '—'}</td>
+                    <td className="text-slate-500 text-xs" style={{ minWidth: 100 }}>{row.clientContactName || '—'}</td>
+                    <td className="text-slate-400 text-xs" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.remarks || '—'}</td>
+                    <td style={{ minWidth: 36 }}>
                       {canWrite(user.role, 'quotations') && (
                         <button onClick={() => openEdit(row)}
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
