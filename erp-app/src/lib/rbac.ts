@@ -62,7 +62,8 @@ export function isKAERestrictedToOwnAccounts(role: Role): boolean {
   return role === 'P5_KEY_ACCOUNT_ENGINEER'
 }
 
+const PERFORMANCE_ACCESS: Role[] = ['P1_CEO', 'P2_ADMIN', 'P3_REGIONAL_MANAGER', 'P4_SALES_MANAGER', 'P7_ACCOUNTANT']
+
 export function canViewPerformanceAnalytics(role: Role): boolean {
-  // Every authenticated user can view their own performance
-  return true
+  return PERFORMANCE_ACCESS.includes(role)
 }
