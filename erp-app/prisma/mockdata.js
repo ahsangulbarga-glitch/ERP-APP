@@ -4,6 +4,10 @@ const prisma = new PrismaClient()
 async function main() {
   console.log('Seeding mock data...')
 
+  // Clear payments + milestones so re-runs produce correct future dates
+  await prisma.paymentMilestone.deleteMany({})
+  await prisma.payment.deleteMany({})
+
   // Get existing users
   const admin = await prisma.user.findUnique({ where: { email: 'admin@company.com' } })
   const ceo   = await prisma.user.findUnique({ where: { email: 'ceo@company.com' } })
@@ -129,15 +133,15 @@ async function main() {
       poNumber: 'PO-SAB-2025-007', customerName: 'SABIC Industries', kaeNameId: kae1.id, poValue: 340000, collectionPct: 50, remarks: '1st payment received',
       milestones: [
         { phaseName: 'Advance Payment', percentage: 50, amountSar: 170000, dueDate: new Date('2025-03-20'), status: 'Paid',    paidAt: new Date('2025-03-22') },
-        { phaseName: 'Final Payment',   percentage: 50, amountSar: 170000, dueDate: new Date('2025-06-01'), status: 'Pending' },
+        { phaseName: 'Final Payment',   percentage: 50, amountSar: 170000, dueDate: new Date('2026-07-01'), status: 'Pending' },
       ]
     },
     {
       poNumber: 'PO-MAD-2025-003', customerName: 'Maaden Mining', kaeNameId: kae2.id, poValue: 620000, collectionPct: 25, remarks: 'Project ongoing',
       milestones: [
         { phaseName: 'Advance',         percentage: 25, amountSar: 155000, dueDate: new Date('2025-04-01'), status: 'Overdue' },
-        { phaseName: 'Mid-Project',     percentage: 50, amountSar: 310000, dueDate: new Date('2025-06-15'), status: 'Pending' },
-        { phaseName: 'Handover',        percentage: 25, amountSar: 155000, dueDate: new Date('2025-08-01'), status: 'Pending' },
+        { phaseName: 'Mid-Project',     percentage: 50, amountSar: 310000, dueDate: new Date('2026-08-15'), status: 'Pending' },
+        { phaseName: 'Handover',        percentage: 25, amountSar: 155000, dueDate: new Date('2026-10-01'), status: 'Pending' },
       ]
     },
     {
@@ -151,15 +155,15 @@ async function main() {
       poNumber: 'PO-SEC-2025-005', customerName: 'Saudi Electricity Co', kaeNameId: kae1.id, poValue: 870000, collectionPct: 20, remarks: 'Long-term project — 3 milestones outstanding',
       milestones: [
         { phaseName: 'Mobilisation',    percentage: 20, amountSar: 174000, dueDate: new Date('2025-05-01'), status: 'Overdue' },
-        { phaseName: 'Installation',    percentage: 40, amountSar: 348000, dueDate: new Date('2025-07-15'), status: 'Pending' },
-        { phaseName: 'Commissioning',   percentage: 40, amountSar: 348000, dueDate: new Date('2025-09-30'), status: 'Pending' },
+        { phaseName: 'Installation',    percentage: 40, amountSar: 348000, dueDate: new Date('2026-08-15'), status: 'Pending' },
+        { phaseName: 'Commissioning',   percentage: 40, amountSar: 348000, dueDate: new Date('2026-11-30'), status: 'Pending' },
       ]
     },
     {
       poNumber: 'PO-ACW-2025-002', customerName: 'Acwa Power', kaeNameId: kae2.id, poValue: 430000, collectionPct: 0, remarks: 'New PO — advance due',
       milestones: [
-        { phaseName: 'Advance',         percentage: 30, amountSar: 129000, dueDate: new Date('2025-05-25'), status: 'Pending' },
-        { phaseName: 'Completion',      percentage: 70, amountSar: 301000, dueDate: new Date('2025-08-30'), status: 'Pending' },
+        { phaseName: 'Advance',         percentage: 30, amountSar: 129000, dueDate: new Date('2026-06-25'), status: 'Pending' },
+        { phaseName: 'Completion',      percentage: 70, amountSar: 301000, dueDate: new Date('2026-09-30'), status: 'Pending' },
       ]
     },
   ]
