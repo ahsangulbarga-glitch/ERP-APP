@@ -5,12 +5,13 @@ import { SessionUser } from '@/types'
 import { canAccessForecast } from '@/lib/rbac'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LineChart, Legend,
-  FunnelChart, Funnel, LabelList,
+  ResponsiveContainer, LineChart, Legend, BarChart, ReferenceLine,
+  FunnelChart, Funnel, LabelList, Cell,
 } from 'recharts'
 import {
   TrendingUp, FileText, ShoppingBag, AlertTriangle, FileWarning,
   Clock, Bell, CalendarClock, CheckCircle2, RefreshCw, Zap, Trophy, Users,
+  Target, BarChart2,
 } from 'lucide-react'
 
 /* ── Types ─────────────────────────────────────────────────────────── */
@@ -18,14 +19,16 @@ interface UpcomingMilestone {
   id: string; phaseName: string; amountSar: number; dueDate: string
   status: string; poNumber: string; customerName: string; daysUntilDue: number
 }
-interface TopCustomer { customerName: string; totalPoValue: number; completionPct: number }
-interface FunnelStage { name: string; value: number; fill: string; pct: number }
+interface TopCustomer  { customerName: string; totalPoValue: number; completionPct: number }
+interface FunnelStage  { name: string; value: number; fill: string; pct: number }
+interface RFQStage     { name: string; count: number; fill: string; dropPct: number }
+interface WinLossItem  { customer: string; won: number; lost: number; winRate: number }
 
 type RawQuote    = { qtnDate: string; amountSar: string|number; status: string }
 type RawPO       = { poDate: string; poAmountExVat: string|number; totalValueIncVat: string|number }
 type RawPayment  = { poNumber: string; customerName: string; poValue: string|number; collectionPct: string|number; milestones?: { id: string; phaseName: string; amountSar: string|number; dueDate: string; status: string }[] }
 type RawDocument = { status: string }
-type RawCustomer = { customerName: string; totalPoValue: string|number; completionPct: string|number }
+type RawCustomer = { customerName: string; totalPoValue: string|number; completionPct: string|number; totalRfq?: number; totalConverted?: number }
 
 
 /* ── Helper ─────────────────────────────────────────────────────── */
@@ -98,6 +101,9 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([])
   const [trendData,    setTrendData]    = useState<{ key: string; month: string; quotes: number; pos: number; collected: number }[]>([])
   const [perfPeriod,   setPerfPeriod]   = useState<'3m'|'6m'|'1y'|'2y'>('1y')
+  const [rfqFunnel,    setRfqFunnel]    = useState<RFQStage[]>([])
+  const [winLoss,      setWinLoss]      = useState<WinLossItem[]>([])
+  const [monthlyQuota, setMonthlyQuota] = useState(0)
   const [allUnpaidMilestones, setAllUnpaidMilestones] = useState<UpcomingMilestone[]>([])
   const [forecastWinRate,   setForecastWinRate]   = useState(60)
   const [forecastTimeline,  setForecastTimeline]  = useState(12)
@@ -216,6 +222,38 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
       all.sort((a, b) => a.daysUntilDue - b.daysUntilDue)
       setAllUnpaidMilestones(all)
 
+      /* ── RFQ-to-Quote Conversion Funnel ── */
+      const totalRfqCount  = customers.reduce((s, c) => s + (c.totalRfq ?? 0), 0)
+      const totalQtCount   = quotes.length
+      const activeQtCount  = quotes.filter(q => q.status === 'Open' || q.status === 'OnHold').length
+      const convertedCount = quotes.filter(q => q.status === 'Converted').length
+      const poCount        = pos.length
+      const rfqStages: RFQStage[] = [
+        { name: 'RFQ Received',      count: totalRfqCount,  fill: '#2563eb', dropPct: 100 },
+        { name: 'Quote Submitted',   count: totalQtCount,   fill: '#0891b2', dropPct: totalRfqCount  > 0 ? (totalQtCount   / totalRfqCount)  * 100 : 0 },
+        { name: 'Under Evaluation',  count: activeQtCount,  fill: '#d97706', dropPct: totalQtCount   > 0 ? (activeQtCount  / totalQtCount)   * 100 : 0 },
+        { name: 'Quote Converted',   count: convertedCount, fill: '#16a34a', dropPct: totalQtCount   > 0 ? (convertedCount / totalQtCount)   * 100 : 0 },
+        { name: 'PO Awarded',        count: poCount,        fill: '#7c3aed', dropPct: convertedCount > 0 ? (poCount        / convertedCount)  * 100 : 0 },
+      ]
+      setRfqFunnel(rfqStages)
+
+      /* ── Win/Loss by Customer ── */
+      const winLossItems: WinLossItem[] = customers
+        .filter(c => (c.totalRfq ?? 0) > 0)
+        .map(c => {
+          const won  = c.totalConverted ?? 0
+          const lost = Math.max(0, (c.totalRfq ?? 0) - won)
+          return { customer: c.customerName, won, lost, winRate: (c.totalRfq ?? 0) > 0 ? (won / (c.totalRfq ?? 1)) * 100 : 0 }
+        })
+        .sort((a, b) => b.winRate - a.winRate)
+      setWinLoss(winLossItems)
+
+      /* ── Monthly Quota (avg of last 3 months PO value) ── */
+      const sortedMonths = Object.entries(monthMap).sort(([a], [b]) => a.localeCompare(b))
+      const last3 = sortedMonths.slice(-3).map(([, v]) => v.pos)
+      const avgQuota = last3.length > 0 ? last3.reduce((s, v) => s + v, 0) / last3.length : 0
+      setMonthlyQuota(Math.round(avgQuota * 1.1)) // 10% growth target
+
     } finally { setLoading(false) }
   }
 
@@ -230,6 +268,22 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
     cutoff.setMonth(cutoff.getMonth() - months)
     const cutKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}`
     return trendData.filter(d => d.key >= cutKey)
+  })()
+
+  /* ── Sales Forecast vs Quota ── */
+  const salesForecastData = (() => {
+    const actual = trendData.slice(-12).map(d => ({ month: d.month, actual: d.pos, quota: monthlyQuota, forecast: null as number | null }))
+    // Simple linear trend from last 6 actual data points
+    const base = actual.slice(-6).map(d => d.actual)
+    const avgGrowth = base.length > 1 ? (base[base.length - 1] - base[0]) / (base.length - 1) : 0
+    const lastVal   = base[base.length - 1] ?? 0
+    const now = new Date()
+    const projected = [1, 2, 3].map(i => {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
+      const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+      return { month: label, actual: null as number | null, quota: monthlyQuota, forecast: Math.max(0, Math.round(lastVal + avgGrowth * i)) }
+    })
+    return [...actual, ...projected]
   })()
 
   const conversionRate     = stats.totalQuoted > 0 ? ((stats.convertedQuotesValue / stats.totalQuoted) * 100).toFixed(1) : '0.0'
@@ -642,6 +696,183 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
             </ResponsiveContainer>
           ) : (
             <div className="flex items-center justify-center h-40 text-slate-400 text-sm">No trend data yet</div>
+          )}
+        </div>
+      </Panel>
+
+      {/* ━━━ ADVANCED ANALYTICS ━━━ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+        {/* ── Chart 1: RFQ-to-Quote Conversion Funnel ── */}
+        <Panel>
+          <PanelHead
+            icon={<Zap size={14} className="text-blue-500" />}
+            title="RFQ-to-Quote Conversion Funnel"
+            sub="Drop-off rate at each stage of the quotation process"
+          />
+          <div className="px-5 py-4 space-y-3">
+            {rfqFunnel.map((stage, i) => {
+              const maxCount = rfqFunnel[0]?.count || 1
+              const width = (stage.count / maxCount) * 100
+              return (
+                <div key={stage.name}>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: stage.fill }} />
+                      <span className="text-xs font-medium text-slate-600">{stage.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {i > 0 && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                          style={{ background: `${stage.fill}18`, color: stage.fill }}>
+                          {stage.dropPct.toFixed(0)}% carry
+                        </span>
+                      )}
+                      <span className="text-sm font-bold text-slate-800 w-6 text-right">{stage.count}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-6 rounded-lg overflow-hidden" style={{ background: '#f1f5f9' }}>
+                      <div className="h-full rounded-lg flex items-center pl-2 transition-all duration-500"
+                        style={{ width: `${Math.max(width, 4)}%`, background: stage.fill, opacity: 0.85 }}>
+                        {width > 25 && (
+                          <span className="text-[10px] font-bold text-white">
+                            {stage.count > 0 ? `${stage.count}` : ''}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            {rfqFunnel.length === 0 && (
+              <div className="flex items-center justify-center h-32 text-slate-400 text-sm">No data</div>
+            )}
+          </div>
+        </Panel>
+
+        {/* ── Chart 2: Win/Loss Analysis by Customer ── */}
+        <Panel>
+          <PanelHead
+            icon={<BarChart2 size={14} className="text-rose-500" />}
+            title="Win/Loss Analysis by Customer"
+            sub="Bids won vs lost · Win rate per account"
+          />
+          <div className="px-4 py-3">
+            {winLoss.length > 0 ? (
+              <>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={winLoss} layout="vertical" barSize={12} margin={{ left: 8, right: 36 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <YAxis type="category" dataKey="customer" tick={{ fontSize: 10, fill: '#475569' }}
+                      axisLine={false} tickLine={false} width={120}
+                      tickFormatter={v => v.length > 16 ? v.slice(0, 15) + '…' : v} />
+                    <Tooltip
+                      content={({ active, payload, label }) => {
+                        if (!active || !payload?.length) return null
+                        const won  = payload.find(p => p.dataKey === 'won')?.value  as number ?? 0
+                        const lost = payload.find(p => p.dataKey === 'lost')?.value as number ?? 0
+                        const rate = (won + lost) > 0 ? ((won / (won + lost)) * 100).toFixed(0) : '0'
+                        return (
+                          <div className="rounded-xl px-3 py-2 text-xs shadow-lg"
+                            style={{ background: '#0f172a', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}>
+                            <p className="font-semibold mb-1 text-slate-300">{label}</p>
+                            <p style={{ color: '#34d399' }}>Won: {won}</p>
+                            <p style={{ color: '#f87171' }}>Lost: {lost}</p>
+                            <p style={{ color: '#fbbf24' }}>Win Rate: {rate}%</p>
+                          </div>
+                        )
+                      }}
+                    />
+                    <Bar dataKey="won"  name="Won"  stackId="a" fill="#16a34a" radius={[0,0,0,0]} />
+                    <Bar dataKey="lost" name="Lost" stackId="a" fill="#ef4444" radius={[0,4,4,0]}
+                      label={({ index }: { index?: number }) => index != null ? `${winLoss[index]?.winRate.toFixed(0)}%` : ''} />
+                  </BarChart>
+                </ResponsiveContainer>
+                <div className="flex items-center justify-center gap-5 mt-1">
+                  {[['#16a34a','Won'],['#ef4444','Lost']].map(([c, l]) => (
+                    <div key={l} className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <span className="w-2.5 h-2.5 rounded-sm" style={{ background: c }} />{l}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-center h-40 text-slate-400 text-sm">No customer data</div>
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      {/* ── Chart 3: Sales Forecast vs. Project Quota ── */}
+      <Panel>
+        <PanelHead
+          icon={<Target size={14} className="text-emerald-500" />}
+          title="Sales Forecast vs. Project Quota"
+          sub="Actual PO revenue · projected trend · monthly quota target"
+          right={
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Quota:</span>
+              <span className="text-xs font-bold text-emerald-600">SAR {fmt(monthlyQuota)}/mo</span>
+              <input type="range" min={100000} max={5000000} step={100000} value={monthlyQuota}
+                onChange={e => setMonthlyQuota(Number(e.target.value))}
+                className="w-24 accent-emerald-500 h-1.5" />
+            </div>
+          }
+        />
+        <div className="p-5">
+          {salesForecastData.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={salesForecastData} barSize={18} margin={{ right: 8 }}>
+                  <defs>
+                    <linearGradient id="actualGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2563eb" /><stop offset="100%" stopColor="#2563eb" stopOpacity={0.4} />
+                    </linearGradient>
+                    <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.6} /><stop offset="100%" stopColor="#7c3aed" stopOpacity={0.15} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false}
+                    tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null
+                      return (
+                        <div className="rounded-xl px-3 py-2 text-xs shadow-lg"
+                          style={{ background: '#0f172a', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}>
+                          <p className="font-semibold mb-1 text-slate-300">{label}</p>
+                          {payload.map((p, i) => p.value != null && (
+                            <p key={i} style={{ color: p.color }}>
+                              {p.name}: SAR {Number(p.value).toLocaleString('en-SA', { maximumFractionDigits: 0 })}
+                            </p>
+                          ))}
+                        </div>
+                      )
+                    }}
+                  />
+                  <ReferenceLine y={monthlyQuota} stroke="#16a34a" strokeDasharray="6 3" strokeWidth={2}
+                    label={{ value: 'Quota', position: 'right', fontSize: 10, fill: '#16a34a' }} />
+                  <Bar dataKey="actual"   name="Actual PO"  fill="url(#actualGrad)"   radius={[4,4,0,0]} />
+                  <Bar dataKey="forecast" name="Forecast"   fill="url(#forecastGrad)" radius={[4,4,0,0]} />
+                  <Line type="monotone" dataKey="quota" name="Monthly Quota" stroke="#16a34a"
+                    strokeWidth={0} dot={false} legendType="none" />
+                </ComposedChart>
+              </ResponsiveContainer>
+              <div className="flex items-center justify-center gap-5 mt-2">
+                {[['url(#actualGrad)','#2563eb','Actual PO'],['url(#forecastGrad)','#7c3aed','Projected'],['#16a34a','#16a34a','Quota Line']].map(([, c, l]) => (
+                  <div key={l} className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: c }} />{l}
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center h-40 text-slate-400 text-sm">No data</div>
           )}
         </div>
       </Panel>
