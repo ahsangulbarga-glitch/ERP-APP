@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { SessionUser } from '@/types'
-import { canAccessForecast } from '@/lib/rbac'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, LineChart, Legend, BarChart, ReferenceLine,
+  ResponsiveContainer, Legend, BarChart, ReferenceLine,
   FunnelChart, Funnel, LabelList, Cell,
 } from 'recharts'
 import {
@@ -105,8 +104,6 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const [winLoss,      setWinLoss]      = useState<WinLossItem[]>([])
   const [monthlyQuota, setMonthlyQuota] = useState(0)
   const [allUnpaidMilestones, setAllUnpaidMilestones] = useState<UpcomingMilestone[]>([])
-  const [forecastWinRate,   setForecastWinRate]   = useState(60)
-  const [forecastTimeline,  setForecastTimeline]  = useState(12)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { loadStats() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -288,12 +285,6 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
 
   const conversionRate     = stats.totalQuoted > 0 ? ((stats.convertedQuotesValue / stats.totalQuoted) * 100).toFixed(1) : '0.0'
   const collectionRate     = stats.totalBilled  > 0 ? ((stats.totalCollected / stats.totalBilled) * 100).toFixed(1) : '0.0'
-
-  const forecastData = ['Q1', 'Q2', 'Q3', 'Q4'].map((q, i) => ({
-    quarter: q,
-    baseline:   Math.round(stats.totalPO * 0.2 * (1 + i * 0.1)),
-    optimistic: Math.round(stats.totalPO * 0.2 * (1 + i * 0.1) * (1 + forecastWinRate / 200)),
-  }))
 
   /* ── Loading skeleton ── */
   if (loading) return (
@@ -877,55 +868,6 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
         </div>
       </Panel>
 
-      {/* ━━━ FORECAST MODELER (CEO only) ━━━ */}
-      {canAccessForecast(user.role) && (
-        <Panel>
-          <PanelHead
-            title={
-              <span className="flex items-center gap-2">
-                ✦ Forecast Modeler
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                  style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>CEO</span>
-              </span>
-            }
-            sub="Adjust parameters to model revenue scenarios"
-          />
-          <div className="p-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-5">
-              {[
-                { label: 'Win Rate', value: forecastWinRate, unit: '%', min: 10, max: 100, onChange: setForecastWinRate },
-                { label: 'Collection Timeline', value: forecastTimeline, unit: ' wks', min: 4, max: 52, onChange: setForecastTimeline },
-              ].map(({ label, value, unit, min, max, onChange }) => (
-                <div key={label}>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-medium text-slate-600">{label}</label>
-                    <span className="text-sm font-bold text-blue-600">{value}{unit}</span>
-                  </div>
-                  <input type="range" min={min} max={max} value={value}
-                    onChange={e => onChange(Number(e.target.value))}
-                    className="w-full accent-blue-600 h-1.5" />
-                  <div className="flex justify-between text-xs text-slate-400 mt-1">
-                    <span>{min}{unit}</span><span>{max}{unit}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={forecastData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="quarter" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false}
-                  tickFormatter={v => `${(v / 1000).toFixed(0)}K`} />
-                <Tooltip formatter={(v) => `SAR ${Number(v).toLocaleString()}`} />
-                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                <Line type="monotone" dataKey="baseline"   stroke="#94a3b8" strokeWidth={2}   name="Baseline"   dot={false} />
-                <Line type="monotone" dataKey="optimistic" stroke="#2563eb" strokeWidth={2.5} name="Optimistic"
-                  strokeDasharray="6 3" dot={{ fill: '#2563eb', strokeWidth: 0, r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </Panel>
-      )}
 
     </div>
   )
