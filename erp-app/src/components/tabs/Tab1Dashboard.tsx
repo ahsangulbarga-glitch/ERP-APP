@@ -104,9 +104,9 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const [winLoss,      setWinLoss]      = useState<WinLossItem[]>([])
   const [monthlyQuota, setMonthlyQuota] = useState(0)
   const [allUnpaidMilestones, setAllUnpaidMilestones] = useState<UpcomingMilestone[]>([])
-  const [quotesByCustomer,   setQuotesByCustomer]   = useState<{ customer: string; count: number; value: number }[]>([])
-  const [arByCustomer,       setArByCustomer]       = useState<{ customer: string; billed: number; collected: number; outstanding: number }[]>([])
-  const [expiringDocList,    setExpiringDocList]    = useState<{ name: string; status: string; daysLeft: number }[]>([])
+  const [rawQuotes,   setRawQuotes]   = useState<{ customer: string; amountSar: number; status: string }[]>([])
+  const [rawPayments, setRawPayments] = useState<{ customer: string; billed: number; collected: number }[]>([])
+  const [expiringDocList, setExpiringDocList] = useState<{ name: string; status: string; daysLeft: number }[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { loadStats() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -254,47 +254,15 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
       const avgQuota = last3.length > 0 ? last3.reduce((s, v) => s + v, 0) / last3.length : 0
       setMonthlyQuota(Math.round(avgQuota * 1.1)) // 10% growth target
 
-      /* ── Quotes by customer (for tooltip) ── */
-      const qcMap: Record<string, { count: number; value: number }> = {}
-      quotes.forEach(q => {
-        const c = q.customerName || 'Unknown'
-        if (!qcMap[c]) qcMap[c] = { count: 0, value: 0 }
-        qcMap[c].count++
-        qcMap[c].value += Number(q.amountSar)
-      })
-      setQuotesByCustomer(
-        Object.entries(qcMap)
-          .map(([customer, v]) => ({ customer, ...v }))
-          .sort((a, b) => b.value - a.value)
-          .slice(0, 6)
-      )
-
-      /* ── AR by customer (for tooltip) ── */
-      const arMap: Record<string, { billed: number; collected: number }> = {}
-      payments.forEach(p => {
-        const c = p.customerName || 'Unknown'
-        if (!arMap[c]) arMap[c] = { billed: 0, collected: 0 }
-        arMap[c].billed    += Number(p.poValue)
-        arMap[c].collected += Number(p.poValue) * (Number(p.collectionPct) / 100)
-      })
-      setArByCustomer(
-        Object.entries(arMap)
-          .map(([customer, v]) => ({ customer, billed: v.billed, collected: v.collected, outstanding: v.billed - v.collected }))
-          .sort((a, b) => b.outstanding - a.outstanding)
-          .slice(0, 6)
-      )
-
-      /* ── Expiring docs list (for tooltip) ── */
+      /* ── Raw rows for render-time tooltip derivations ── */
+      setRawQuotes(quotes.map(q => ({ customer: q.customerName || 'Unknown', amountSar: Number(q.amountSar), status: q.status })))
+      setRawPayments(payments.map(p => ({ customer: p.customerName || 'Unknown', billed: Number(p.poValue), collected: Number(p.poValue) * (Number(p.collectionPct) / 100) })))
       setExpiringDocList(
         docs
           .filter(d => d.status === 'ExpiringSoon' || d.status === 'Expired')
-          .map(d => ({
-            name: d.documentName || 'Document',
-            status: d.status,
-            daysLeft: d.remainingDaysForExpiry ?? 0,
-          }))
+          .map(d => ({ name: d.documentName || 'Document', status: d.status, daysLeft: d.remainingDaysForExpiry ?? 0 }))
           .sort((a, b) => a.daysLeft - b.daysLeft)
-          .slice(0, 6)
+          .slice(0, 8)
       )
 
     } finally { setLoading(false) }
@@ -329,8 +297,29 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
     return [...actual, ...projected]
   })()
 
-  const conversionRate     = stats.totalQuoted > 0 ? ((stats.convertedQuotesValue / stats.totalQuoted) * 100).toFixed(1) : '0.0'
-  const collectionRate     = stats.totalBilled  > 0 ? ((stats.totalCollected / stats.totalBilled) * 100).toFixed(1) : '0.0'
+  const conversionRate  = stats.totalQuoted > 0 ? ((stats.convertedQuotesValue / stats.totalQuoted) * 100).toFixed(1) : '0.0'
+  const collectionRate  = stats.totalBilled  > 0 ? ((stats.totalCollected / stats.totalBilled) * 100).toFixed(1) : '0.0'
+
+  /* ── Tooltip account breakdowns (derived every render, always fresh) ── */
+  const quotesByCustomer = (() => {
+    const map: Record<string, { count: number; value: number }> = {}
+    rawQuotes.forEach(q => {
+      if (!map[q.customer]) map[q.customer] = { count: 0, value: 0 }
+      map[q.customer].count++
+      map[q.customer].value += q.amountSar
+    })
+    return Object.entries(map).map(([customer, v]) => ({ customer, ...v })).sort((a, b) => b.value - a.value)
+  })()
+
+  const arByCustomer = (() => {
+    const map: Record<string, { billed: number; collected: number }> = {}
+    rawPayments.forEach(p => {
+      if (!map[p.customer]) map[p.customer] = { billed: 0, collected: 0 }
+      map[p.customer].billed    += p.billed
+      map[p.customer].collected += p.collected
+    })
+    return Object.entries(map).map(([customer, v]) => ({ customer, ...v, outstanding: v.billed - v.collected })).sort((a, b) => b.outstanding - a.outstanding)
+  })()
 
   /* ── Loading skeleton ── */
   if (loading) return (
