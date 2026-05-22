@@ -23,10 +23,10 @@ interface FunnelStage  { name: string; value: number; fill: string; pct: number 
 interface RFQStage     { name: string; count: number; fill: string; dropPct: number }
 interface WinLossItem  { customer: string; won: number; lost: number; winRate: number }
 
-type RawQuote    = { qtnDate: string; amountSar: string|number; status: string }
+type RawQuote    = { qtnDate: string; amountSar: string|number; status: string; customerName: string; qtRef?: string }
 type RawPO       = { poDate: string; poAmountExVat: string|number; totalValueIncVat: string|number }
 type RawPayment  = { poNumber: string; customerName: string; poValue: string|number; collectionPct: string|number; milestones?: { id: string; phaseName: string; amountSar: string|number; dueDate: string; status: string }[] }
-type RawDocument = { status: string }
+type RawDocument = { status: string; documentName: string; expiryDate?: string; remainingDaysForExpiry?: number }
 type RawCustomer = { customerName: string; totalPoValue: string|number; completionPct: string|number; totalRfq?: number; totalConverted?: number }
 
 
@@ -104,6 +104,9 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const [winLoss,      setWinLoss]      = useState<WinLossItem[]>([])
   const [monthlyQuota, setMonthlyQuota] = useState(0)
   const [allUnpaidMilestones, setAllUnpaidMilestones] = useState<UpcomingMilestone[]>([])
+  const [quotesByCustomer,   setQuotesByCustomer]   = useState<{ customer: string; count: number; value: number }[]>([])
+  const [arByCustomer,       setArByCustomer]       = useState<{ customer: string; billed: number; collected: number; outstanding: number }[]>([])
+  const [expiringDocList,    setExpiringDocList]    = useState<{ name: string; status: string; daysLeft: number }[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { loadStats() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -251,6 +254,49 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
       const avgQuota = last3.length > 0 ? last3.reduce((s, v) => s + v, 0) / last3.length : 0
       setMonthlyQuota(Math.round(avgQuota * 1.1)) // 10% growth target
 
+      /* ── Quotes by customer (for tooltip) ── */
+      const qcMap: Record<string, { count: number; value: number }> = {}
+      quotes.forEach(q => {
+        const c = q.customerName || 'Unknown'
+        if (!qcMap[c]) qcMap[c] = { count: 0, value: 0 }
+        qcMap[c].count++
+        qcMap[c].value += Number(q.amountSar)
+      })
+      setQuotesByCustomer(
+        Object.entries(qcMap)
+          .map(([customer, v]) => ({ customer, ...v }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 6)
+      )
+
+      /* ── AR by customer (for tooltip) ── */
+      const arMap: Record<string, { billed: number; collected: number }> = {}
+      payments.forEach(p => {
+        const c = p.customerName || 'Unknown'
+        if (!arMap[c]) arMap[c] = { billed: 0, collected: 0 }
+        arMap[c].billed    += Number(p.poValue)
+        arMap[c].collected += Number(p.poValue) * (Number(p.collectionPct) / 100)
+      })
+      setArByCustomer(
+        Object.entries(arMap)
+          .map(([customer, v]) => ({ customer, billed: v.billed, collected: v.collected, outstanding: v.billed - v.collected }))
+          .sort((a, b) => b.outstanding - a.outstanding)
+          .slice(0, 6)
+      )
+
+      /* ── Expiring docs list (for tooltip) ── */
+      setExpiringDocList(
+        docs
+          .filter(d => d.status === 'ExpiringSoon' || d.status === 'Expired')
+          .map(d => ({
+            name: d.documentName || 'Document',
+            status: d.status,
+            daysLeft: d.remainingDaysForExpiry ?? 0,
+          }))
+          .sort((a, b) => a.daysLeft - b.daysLeft)
+          .slice(0, 6)
+      )
+
     } finally { setLoading(false) }
   }
 
@@ -340,62 +386,177 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
 
         {/* Hero KPI grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-4">
-          {[
-            {
-              label: 'Total Pipeline',
-              value: `SAR ${fmt(stats.totalQuoted)}`,
-              sub: `${stats.totalQuotes} quotations`,
-              subColor: '#60a5fa',
-              tooltip: `${stats.totalQuotes} quotes raised in total — Open: ${stats.openQuotes} · On Hold: ${stats.onHoldQuotes} · Converted: ${stats.convertedQuotes} · Lost: ${stats.lostQuotes}`,
-            },
-            {
-              label: 'PO Value (inc-VAT)',
-              value: `SAR ${fmt(stats.totalPO)}`,
-              sub: `${conversionRate}% win rate`,
-              subColor: '#34d399',
-              tooltip: `Win rate = Converted ÷ Total quotes (${stats.convertedQuotes} of ${stats.totalQuotes}). Measures how many quotes turned into purchase orders.`,
-            },
-            {
-              label: 'Collected',
-              value: `SAR ${fmt(stats.totalCollected)}`,
-              sub: `${collectionRate}% of billed`,
-              subColor: '#a78bfa',
-              tooltip: `SAR ${fmt(stats.totalCollected)} collected out of SAR ${fmt(stats.totalBilled)} total billed. Collection rate tracks payment receipt efficiency.`,
-            },
-            {
-              label: 'AR Outstanding',
-              value: `SAR ${fmt(stats.totalOutstanding)}`,
-              sub: stats.totalOutstanding > 0 ? 'Pending collection' : 'Fully collected',
-              subColor: stats.totalOutstanding > 0 ? '#f87171' : '#34d399',
-              tooltip: stats.totalOutstanding > 0
-                ? `SAR ${fmt(stats.totalOutstanding)} remains unpaid — this is the difference between total billed (SAR ${fmt(stats.totalBilled)}) and collected (SAR ${fmt(stats.totalCollected)}).`
-                : 'All invoiced amounts have been fully collected. No outstanding AR balance.',
-            },
-            {
-              label: 'Active Alerts',
-              value: String(stats.overduePayments + stats.expiringDocs),
-              sub: `${stats.overduePayments} overdue · ${stats.expiringDocs} doc alerts`,
-              subColor: '#fbbf24',
-              tooltip: `${stats.overduePayments} payment milestone${stats.overduePayments !== 1 ? 's' : ''} past due date · ${stats.expiringDocs} document${stats.expiringDocs !== 1 ? 's' : ''} expiring soon or already expired. Requires immediate attention.`,
-            },
-          ].map(({ label, value, sub, subColor, tooltip }) => (
-            <div key={label} className="flex flex-col">
-              <p className="text-xs mb-1" style={{ color: 'rgba(255,255,255,0.38)' }}>{label}</p>
-              <p className="text-xl font-bold tracking-tight" style={{ color: '#fff' }}>{value}</p>
-              <div className="relative group inline-block mt-0.5 w-fit">
-                <p className="text-xs font-medium cursor-default underline decoration-dotted underline-offset-2 decoration-1"
-                  style={{ color: subColor, textDecorationColor: `${subColor}99` }}>{sub}</p>
-                <div className="pointer-events-none absolute bottom-full left-0 mb-2 z-50
-                  w-64 rounded-lg px-3 py-2 text-xs leading-relaxed shadow-xl
-                  opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                  style={{ background: 'rgba(15,23,42,0.97)', color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  {tooltip}
-                  <div className="absolute top-full left-4 -translate-y-0.5"
-                    style={{ borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid rgba(15,23,42,0.97)' }} />
+          {([
+            { id: 'pipeline', label: 'Total Pipeline',     value: `SAR ${fmt(stats.totalQuoted)}`,      sub: `${stats.totalQuotes} quotations`,   subColor: '#60a5fa' },
+            { id: 'winrate',  label: 'PO Value (inc-VAT)', value: `SAR ${fmt(stats.totalPO)}`,          sub: `${conversionRate}% win rate`,        subColor: '#34d399' },
+            { id: 'billed',   label: 'Collected',          value: `SAR ${fmt(stats.totalCollected)}`,   sub: `${collectionRate}% of billed`,       subColor: '#a78bfa' },
+            { id: 'ar',       label: 'AR Outstanding',     value: `SAR ${fmt(stats.totalOutstanding)}`, sub: stats.totalOutstanding > 0 ? 'Pending collection' : 'Fully collected', subColor: stats.totalOutstanding > 0 ? '#f87171' : '#34d399' },
+            { id: 'alerts',   label: 'Active Alerts',      value: String(stats.overduePayments + stats.expiringDocs), sub: `${stats.overduePayments} overdue · ${stats.expiringDocs} doc alerts`, subColor: '#fbbf24' },
+          ] as { id: string; label: string; value: string; sub: string; subColor: string }[]).map(({ id, label, value, sub, subColor }) => {
+            /* ── per-card popover content ── */
+            const popover = id === 'pipeline' ? (
+              <>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#93c5fd' }}>Quotes by Account</p>
+                {quotesByCustomer.length === 0
+                  ? <p className="text-xs" style={{ color: '#94a3b8' }}>No data available</p>
+                  : <table className="w-full text-xs border-collapse">
+                      <thead><tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <th className="text-left pb-1.5 font-medium">Account</th>
+                        <th className="text-right pb-1.5 font-medium">Qty</th>
+                        <th className="text-right pb-1.5 font-medium">Value (SAR)</th>
+                      </tr></thead>
+                      <tbody>
+                        {quotesByCustomer.map(c => (
+                          <tr key={c.customer} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <td className="py-1 pr-2 truncate max-w-[110px]" style={{ color: '#e2e8f0' }}>{c.customer}</td>
+                            <td className="py-1 text-right font-medium" style={{ color: '#93c5fd' }}>{c.count}</td>
+                            <td className="py-1 text-right" style={{ color: '#cbd5e1' }}>{fmt(c.value)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                }
+              </>
+            ) : id === 'winrate' ? (
+              <>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#6ee7b7' }}>Win Rate by Account</p>
+                {winLoss.length === 0
+                  ? <p className="text-xs" style={{ color: '#94a3b8' }}>No data available</p>
+                  : <table className="w-full text-xs border-collapse">
+                      <thead><tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <th className="text-left pb-1.5 font-medium">Account</th>
+                        <th className="text-right pb-1.5 font-medium">Won</th>
+                        <th className="text-right pb-1.5 font-medium">Lost</th>
+                        <th className="text-right pb-1.5 font-medium">Rate</th>
+                      </tr></thead>
+                      <tbody>
+                        {winLoss.slice(0, 6).map(c => (
+                          <tr key={c.customer} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <td className="py-1 pr-2 truncate max-w-[90px]" style={{ color: '#e2e8f0' }}>{c.customer}</td>
+                            <td className="py-1 text-right" style={{ color: '#4ade80' }}>{c.won}</td>
+                            <td className="py-1 text-right" style={{ color: '#f87171' }}>{c.lost}</td>
+                            <td className="py-1 text-right font-bold" style={{ color: c.winRate >= 50 ? '#4ade80' : '#fbbf24' }}>{c.winRate.toFixed(0)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                }
+              </>
+            ) : id === 'billed' ? (
+              <>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#c4b5fd' }}>Collection by Account</p>
+                {arByCustomer.length === 0
+                  ? <p className="text-xs" style={{ color: '#94a3b8' }}>No data available</p>
+                  : <table className="w-full text-xs border-collapse">
+                      <thead><tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <th className="text-left pb-1.5 font-medium">Account</th>
+                        <th className="text-right pb-1.5 font-medium">Billed</th>
+                        <th className="text-right pb-1.5 font-medium">Collected</th>
+                        <th className="text-right pb-1.5 font-medium">Rate</th>
+                      </tr></thead>
+                      <tbody>
+                        {arByCustomer.map(c => {
+                          const rate = c.billed > 0 ? (c.collected / c.billed * 100) : 0
+                          return (
+                            <tr key={c.customer} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                              <td className="py-1 pr-2 truncate max-w-[90px]" style={{ color: '#e2e8f0' }}>{c.customer}</td>
+                              <td className="py-1 text-right" style={{ color: '#94a3b8' }}>{fmt(c.billed)}</td>
+                              <td className="py-1 text-right" style={{ color: '#a78bfa' }}>{fmt(c.collected)}</td>
+                              <td className="py-1 text-right font-bold" style={{ color: rate >= 80 ? '#4ade80' : rate >= 50 ? '#fbbf24' : '#f87171' }}>{rate.toFixed(0)}%</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                }
+              </>
+            ) : id === 'ar' ? (
+              <>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#fca5a5' }}>Outstanding AR by Account</p>
+                {arByCustomer.filter(c => c.outstanding > 0).length === 0
+                  ? <p className="text-xs" style={{ color: '#4ade80' }}>✓ All accounts fully collected</p>
+                  : <table className="w-full text-xs border-collapse">
+                      <thead><tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <th className="text-left pb-1.5 font-medium">Account</th>
+                        <th className="text-right pb-1.5 font-medium">Billed</th>
+                        <th className="text-right pb-1.5 font-medium">Outstanding</th>
+                      </tr></thead>
+                      <tbody>
+                        {arByCustomer.filter(c => c.outstanding > 0).map(c => (
+                          <tr key={c.customer} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                            <td className="py-1 pr-2 truncate max-w-[110px]" style={{ color: '#e2e8f0' }}>{c.customer}</td>
+                            <td className="py-1 text-right" style={{ color: '#94a3b8' }}>{fmt(c.billed)}</td>
+                            <td className="py-1 text-right font-bold" style={{ color: '#f87171' }}>{fmt(c.outstanding)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                }
+              </>
+            ) : (
+              <>
+                {overdueMilestones.length > 0 && (
+                  <>
+                    <p className="text-xs font-semibold mb-1.5" style={{ color: '#fca5a5' }}>Overdue Milestones</p>
+                    <div className="space-y-1 mb-2">
+                      {overdueMilestones.map(m => (
+                        <div key={m.id} className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs" style={{ color: '#e2e8f0' }}>{m.customerName}</p>
+                            <p className="truncate text-xs" style={{ color: '#94a3b8' }}>{m.phaseName} · {m.poNumber}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-bold" style={{ color: '#f87171' }}>SAR {fmt(m.amountSar)}</p>
+                            <p className="text-xs" style={{ color: '#fca5a5' }}>{Math.abs(m.daysUntilDue)}d overdue</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {expiringDocList.length > 0 && (
+                  <>
+                    <div style={{ borderTop: overdueMilestones.length > 0 ? '1px solid rgba(255,255,255,0.08)' : undefined, paddingTop: overdueMilestones.length > 0 ? '6px' : undefined }}>
+                      <p className="text-xs font-semibold mb-1.5" style={{ color: '#fde68a' }}>Document Alerts</p>
+                      <div className="space-y-1">
+                        {expiringDocList.map((d, i) => (
+                          <div key={i} className="flex items-center justify-between gap-2">
+                            <p className="truncate text-xs" style={{ color: '#e2e8f0' }}>{d.name}</p>
+                            <span className="text-xs font-semibold shrink-0 px-1.5 py-0.5 rounded"
+                              style={{ background: d.status === 'Expired' ? '#450a0a' : '#422006', color: d.status === 'Expired' ? '#fca5a5' : '#fde68a' }}>
+                              {d.status === 'Expired' ? `${Math.abs(d.daysLeft)}d ago` : `${d.daysLeft}d left`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+                {overdueMilestones.length === 0 && expiringDocList.length === 0 && (
+                  <p className="text-xs" style={{ color: '#4ade80' }}>✓ No active alerts</p>
+                )}
+              </>
+            )
+
+            return (
+              <div key={label} className="flex flex-col">
+                <p className="text-xs mb-1" style={{ color: 'rgba(255,255,255,0.38)' }}>{label}</p>
+                <p className="text-xl font-bold tracking-tight" style={{ color: '#fff' }}>{value}</p>
+                <div className="relative group inline-block mt-0.5 w-fit">
+                  <p className="text-xs font-medium cursor-default underline decoration-dotted underline-offset-2 decoration-1"
+                    style={{ color: subColor, textDecorationColor: `${subColor}99` }}>{sub}</p>
+                  <div className="pointer-events-none absolute bottom-full left-0 mb-2 z-50
+                    w-72 rounded-xl p-3 shadow-2xl
+                    opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                    style={{ background: 'rgba(10,18,36,0.98)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    {popover}
+                    <div className="absolute top-full left-4 -translate-y-px"
+                      style={{ borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid rgba(10,18,36,0.98)' }} />
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
