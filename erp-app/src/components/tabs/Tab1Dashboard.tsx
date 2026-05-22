@@ -533,13 +533,13 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
                 <p className="text-xl font-bold tracking-tight transition-colors group-hover:opacity-80" style={{ color: '#fff' }}>{value}</p>
                 <p className="text-xs font-medium mt-0.5 underline decoration-dotted underline-offset-2 decoration-1"
                   style={{ color: subColor, textDecorationColor: `${subColor}80` }}>{sub}</p>
-                <div className="pointer-events-none absolute bottom-full left-0 mb-2 z-50
+                <div className="pointer-events-none absolute top-full left-0 mt-2 z-50
                   w-72 rounded-xl p-3 shadow-2xl
                   opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                   style={{ background: 'rgba(10,18,36,0.98)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div className="absolute bottom-full left-4 translate-y-px"
+                    style={{ borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderBottom: '5px solid rgba(10,18,36,0.98)' }} />
                   {popover}
-                  <div className="absolute top-full left-4 -translate-y-px"
-                    style={{ borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid rgba(10,18,36,0.98)' }} />
                 </div>
               </div>
             )
