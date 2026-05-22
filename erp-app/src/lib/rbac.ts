@@ -7,7 +7,7 @@ export const TABS_ACCESS: Record<string, { read: Role[]; write: Role[] }> = {
   },
   poTracker: {
     read: ['P1_CEO', 'P2_ADMIN', 'P3_REGIONAL_MANAGER', 'P4_SALES_MANAGER', 'P5_KEY_ACCOUNT_ENGINEER', 'P6_INSIDE_SALES_ENGINEER', 'P7_ACCOUNTANT'],
-    write: ['P2_ADMIN', 'P7_ACCOUNTANT'],
+    write: ['P2_ADMIN', 'P4_SALES_MANAGER', 'P7_ACCOUNTANT'],
   },
   customers: {
     read: ['P1_CEO', 'P2_ADMIN', 'P3_REGIONAL_MANAGER', 'P4_SALES_MANAGER', 'P5_KEY_ACCOUNT_ENGINEER', 'P6_INSIDE_SALES_ENGINEER', 'P7_ACCOUNTANT'],
