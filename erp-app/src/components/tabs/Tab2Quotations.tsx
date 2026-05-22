@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { SessionUser, Quotation, QuotationStatus } from '@/types'
 import { canWrite, canBulkImport } from '@/lib/rbac'
 import KPISummaryPanel from '@/components/shared/KPISummaryPanel'
-import { Plus, Download, Upload, FileText, Pencil, Check, X, DollarSign, TrendingUp, TrendingDown, PauseCircle } from 'lucide-react'
+import { Plus, Download, Upload, FileText, Pencil, Check, X, DollarSign, TrendingUp, TrendingDown, Link2 } from 'lucide-react'
+import DealChainModal from '@/components/shared/DealChainModal'
 
 const STATUS_STYLES: Record<QuotationStatus, { bg: string; text: string; border: string }> = {
   Open:      { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
@@ -19,6 +20,7 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
   const [filters, setFilters] = useState({ dateFrom: '', dateTo: '', kaeId: '', customer: '', qtRef: '', status: '' })
   const [showForm, setShowForm] = useState(false)
   const [editRow, setEditRow] = useState<Quotation | null>(null)
+  const [chainSeed, setChainSeed] = useState<{ qtRef?: string; poNumber?: string } | null>(null)
   const [formError, setFormError] = useState('')
   const [form, setForm] = useState({
     qtRef: '', qtnDate: '', customerName: '', projectName: '', amountSar: '',
@@ -189,13 +191,19 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
                     <td className="text-slate-500 text-xs" style={{ minWidth: 100 }}>{row.kaeAssigned?.name || '—'}</td>
                     <td className="text-slate-500 text-xs" style={{ minWidth: 100 }}>{row.clientContactName || '—'}</td>
                     <td className="text-slate-400 text-xs" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.remarks || '—'}</td>
-                    <td style={{ minWidth: 36 }}>
-                      {canWrite(user.role, 'quotations') && (
-                        <button onClick={() => openEdit(row)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
-                          <Pencil size={13} />
+                    <td style={{ minWidth: 64 }}>
+                      <div className="flex items-center gap-0.5">
+                        <button onClick={() => setChainSeed({ qtRef: row.qtRef, poNumber: row.poNumber })}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all" title="View deal chain">
+                          <Link2 size={13} />
                         </button>
-                      )}
+                        {canWrite(user.role, 'quotations') && (
+                          <button onClick={() => openEdit(row)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -204,6 +212,8 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
           </table>
         )}
       </div>
+
+      {chainSeed && <DealChainModal seed={chainSeed} onClose={() => setChainSeed(null)} />}
 
       {/* Modal */}
       {showForm && (

@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { SessionUser, Payment } from '@/types'
 import { canWrite } from '@/lib/rbac'
 import KPISummaryPanel from '@/components/shared/KPISummaryPanel'
-import { Plus, Download, CreditCard, ChevronDown, ChevronUp, X, Check, AlertTriangle, DollarSign, Activity, Trash2, CalendarDays, Pencil } from 'lucide-react'
+import { Plus, Download, CreditCard, ChevronDown, ChevronUp, X, Check, AlertTriangle, DollarSign, Activity, Trash2, CalendarDays, Pencil, Link2 } from 'lucide-react'
+import DealChainModal from '@/components/shared/DealChainModal'
 
 const MILESTONE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   Pending: { bg: '#fffbeb', text: '#b45309', border: '#fde68a' },
@@ -17,6 +18,7 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
   const [loading, setLoading] = useState(true)
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [filters, setFilters] = useState({ poNumber: '', customer: '', kaeId: '', milestoneStatus: '' })
+  const [chainSeed, setChainSeed] = useState<{ poNumber?: string } | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ poNumber: '', customerName: '', poValue: '', remarks: '' })
   const [milestones, setMilestones] = useState<{ phaseName: string; amountSar: string; dueDate: string; status: string }[]>([])
@@ -207,6 +209,10 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={e => { e.stopPropagation(); setChainSeed({ poNumber: row.poNumber }) }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all" title="View deal chain">
+                        <Link2 size={13} />
+                      </button>
                       {canWrite(user.role, 'payments') && (
                         <button onClick={e => { e.stopPropagation(); openEdit(row) }}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
@@ -259,6 +265,8 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
           </div>
         )}
       </div>
+
+      {chainSeed && <DealChainModal seed={chainSeed} onClose={() => setChainSeed(null)} onMilestonePaid={load} />}
 
       {/* ── Edit Payment Modal ── */}
       {editTarget && (

@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { SessionUser, POTracker } from '@/types'
 import { canWrite } from '@/lib/rbac'
 import KPISummaryPanel from '@/components/shared/KPISummaryPanel'
-import { Plus, Download, ShoppingCart, Pencil, X, Check, BarChart2, Percent, Trash2, CalendarDays } from 'lucide-react'
+import { Plus, Download, ShoppingCart, Pencil, X, Check, BarChart2, Percent, Trash2, CalendarDays, Link2 } from 'lucide-react'
+import DealChainModal from '@/components/shared/DealChainModal'
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   Pending:       { bg: '#fffbeb', text: '#b45309', border: '#fde68a' },
@@ -19,6 +20,7 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
   const [filters, setFilters] = useState({ dateFrom: '', dateTo: '', kae: '', customer: '', poNumber: '', status: '' })
   const [showForm, setShowForm] = useState(false)
   const [editRow, setEditRow] = useState<POTracker | null>(null)
+  const [chainSeed, setChainSeed] = useState<{ qtRef?: string; poNumber?: string } | null>(null)
   const [form, setForm] = useState({ customerName: '', projectName: '', kaeName: '', qtRef: '', poNumber: '', poDate: '', poAmountExVat: '', paymentTermsSplit: '', remarks: '' })
 
   type MilestoneRow = { id?: string; phaseName: string; amountSar: string; dueDate: string; status: string; paidAt?: string; _deleted?: boolean }
@@ -214,12 +216,18 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
                         style={{ background: s.bg, color: s.text, borderColor: s.border }}>{row.paymentStatus}</span>
                     </td>
                     <td className="text-slate-400 text-xs" style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.remarks || '—'}</td>
-                    <td style={{ minWidth: 36 }}>
-                      {canWrite(user.role, 'poTracker') && (
-                        <button onClick={() => openEdit(row)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all">
-                          <Pencil size={13} />
+                    <td style={{ minWidth: 64 }}>
+                      <div className="flex items-center gap-0.5">
+                        <button onClick={() => setChainSeed({ poNumber: row.poNumber, qtRef: row.qtRef })}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all" title="View deal chain">
+                          <Link2 size={13} />
                         </button>
-                      )}
+                        {canWrite(user.role, 'poTracker') && (
+                          <button onClick={() => openEdit(row)} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all">
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 )
@@ -228,6 +236,8 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
           </table>
         )}
       </div>
+
+      {chainSeed && <DealChainModal seed={chainSeed} onClose={() => setChainSeed(null)} onMilestonePaid={load} />}
 
       {showForm && (
         <div className="modal-overlay">
