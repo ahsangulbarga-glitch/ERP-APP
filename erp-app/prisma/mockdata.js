@@ -16,32 +16,32 @@ async function main() {
   const kae1 = await prisma.user.upsert({
     where: { email: 'ahmed.kae@company.com' },
     update: {},
-    create: { name: 'Ahmed Al-Rashid', email: 'ahmed.kae@company.com', role: 'P5_KEY_ACCOUNT_ENGINEER', pinHash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', isActive: true },
+    create: { name: 'Ahmed Al-Rashid', email: 'ahmed.kae@company.com', role: 'P5_KEY_ACCOUNT_ENGINEER', pinHash: '$2b$10$UTxRFa5mnqvveMR/cD/ax.bMkgo6QnqusBooCyewHBrsHX3mNFwcC', isActive: true },
   })
   const kae2 = await prisma.user.upsert({
     where: { email: 'sara.kae@company.com' },
     update: {},
-    create: { name: 'Sara Hassan', email: 'sara.kae@company.com', role: 'P5_KEY_ACCOUNT_ENGINEER', pinHash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', isActive: true },
+    create: { name: 'Sara Hassan', email: 'sara.kae@company.com', role: 'P5_KEY_ACCOUNT_ENGINEER', pinHash: '$2b$10$UTxRFa5mnqvveMR/cD/ax.bMkgo6QnqusBooCyewHBrsHX3mNFwcC', isActive: true },
   })
   const sm = await prisma.user.upsert({
     where: { email: 'khalid.sm@company.com' },
     update: {},
-    create: { name: 'Khalid Al-Qahtani', email: 'khalid.sm@company.com', role: 'P4_SALES_MANAGER', pinHash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', isActive: true },
+    create: { name: 'Khalid Al-Qahtani', email: 'khalid.sm@company.com', role: 'P4_SALES_MANAGER', pinHash: '$2b$10$UTxRFa5mnqvveMR/cD/ax.bMkgo6QnqusBooCyewHBrsHX3mNFwcC', isActive: true },
   })
   const finance = await prisma.user.upsert({
     where: { email: 'nadia.finance@company.com' },
     update: {},
-    create: { name: 'Nadia Yousef', email: 'nadia.finance@company.com', role: 'P6_INSIDE_SALES_ENGINEER', pinHash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', isActive: true },
+    create: { name: 'Nadia Yousef', email: 'nadia.finance@company.com', role: 'P6_INSIDE_SALES_ENGINEER', pinHash: '$2b$10$UTxRFa5mnqvveMR/cD/ax.bMkgo6QnqusBooCyewHBrsHX3mNFwcC', isActive: true },
   })
   const accountant = await prisma.user.upsert({
     where: { email: 'faisal.acc@company.com' },
     update: {},
-    create: { name: 'Faisal Al-Otaibi', email: 'faisal.acc@company.com', role: 'P7_ACCOUNTANT', pinHash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', isActive: true },
+    create: { name: 'Faisal Al-Otaibi', email: 'faisal.acc@company.com', role: 'P7_ACCOUNTANT', pinHash: '$2b$10$UTxRFa5mnqvveMR/cD/ax.bMkgo6QnqusBooCyewHBrsHX3mNFwcC', isActive: true },
   })
   const hr = await prisma.user.upsert({
     where: { email: 'reem.hr@company.com' },
     update: {},
-    create: { name: 'Reem Al-Zahrani', email: 'reem.hr@company.com', role: 'P8_HR', pinHash: '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', isActive: true },
+    create: { name: 'Reem Al-Zahrani', email: 'reem.hr@company.com', role: 'P8_HR', pinHash: '$2b$10$UTxRFa5mnqvveMR/cD/ax.bMkgo6QnqusBooCyewHBrsHX3mNFwcC', isActive: true },
   })
 
   console.log('Users created.')
