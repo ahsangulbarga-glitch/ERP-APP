@@ -341,16 +341,59 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
         {/* Hero KPI grid */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-4">
           {[
-            { label: 'Total Pipeline',   value: `SAR ${fmt(stats.totalQuoted)}`,      sub: `${stats.totalQuotes} quotations`,                  subColor: '#60a5fa' },
-            { label: 'PO Value (inc-VAT)', value: `SAR ${fmt(stats.totalPO)}`,        sub: `${conversionRate}% win rate`,                      subColor: '#34d399' },
-            { label: 'Collected',        value: `SAR ${fmt(stats.totalCollected)}`,   sub: `${collectionRate}% of billed`,                     subColor: '#a78bfa' },
-            { label: 'AR Outstanding',   value: `SAR ${fmt(stats.totalOutstanding)}`, sub: stats.totalOutstanding > 0 ? 'Pending collection' : 'Fully collected', subColor: stats.totalOutstanding > 0 ? '#f87171' : '#34d399' },
-            { label: 'Active Alerts',    value: String(stats.overduePayments + stats.expiringDocs), sub: `${stats.overduePayments} overdue · ${stats.expiringDocs} doc alerts`, subColor: '#fbbf24' },
-          ].map(({ label, value, sub, subColor }) => (
+            {
+              label: 'Total Pipeline',
+              value: `SAR ${fmt(stats.totalQuoted)}`,
+              sub: `${stats.totalQuotes} quotations`,
+              subColor: '#60a5fa',
+              tooltip: `${stats.totalQuotes} quotes raised in total — Open: ${stats.openQuotes} · On Hold: ${stats.onHoldQuotes} · Converted: ${stats.convertedQuotes} · Lost: ${stats.lostQuotes}`,
+            },
+            {
+              label: 'PO Value (inc-VAT)',
+              value: `SAR ${fmt(stats.totalPO)}`,
+              sub: `${conversionRate}% win rate`,
+              subColor: '#34d399',
+              tooltip: `Win rate = Converted ÷ Total quotes (${stats.convertedQuotes} of ${stats.totalQuotes}). Measures how many quotes turned into purchase orders.`,
+            },
+            {
+              label: 'Collected',
+              value: `SAR ${fmt(stats.totalCollected)}`,
+              sub: `${collectionRate}% of billed`,
+              subColor: '#a78bfa',
+              tooltip: `SAR ${fmt(stats.totalCollected)} collected out of SAR ${fmt(stats.totalBilled)} total billed. Collection rate tracks payment receipt efficiency.`,
+            },
+            {
+              label: 'AR Outstanding',
+              value: `SAR ${fmt(stats.totalOutstanding)}`,
+              sub: stats.totalOutstanding > 0 ? 'Pending collection' : 'Fully collected',
+              subColor: stats.totalOutstanding > 0 ? '#f87171' : '#34d399',
+              tooltip: stats.totalOutstanding > 0
+                ? `SAR ${fmt(stats.totalOutstanding)} remains unpaid — this is the difference between total billed (SAR ${fmt(stats.totalBilled)}) and collected (SAR ${fmt(stats.totalCollected)}).`
+                : 'All invoiced amounts have been fully collected. No outstanding AR balance.',
+            },
+            {
+              label: 'Active Alerts',
+              value: String(stats.overduePayments + stats.expiringDocs),
+              sub: `${stats.overduePayments} overdue · ${stats.expiringDocs} doc alerts`,
+              subColor: '#fbbf24',
+              tooltip: `${stats.overduePayments} payment milestone${stats.overduePayments !== 1 ? 's' : ''} past due date · ${stats.expiringDocs} document${stats.expiringDocs !== 1 ? 's' : ''} expiring soon or already expired. Requires immediate attention.`,
+            },
+          ].map(({ label, value, sub, subColor, tooltip }) => (
             <div key={label} className="flex flex-col">
               <p className="text-xs mb-1" style={{ color: 'rgba(255,255,255,0.38)' }}>{label}</p>
               <p className="text-xl font-bold tracking-tight" style={{ color: '#fff' }}>{value}</p>
-              <p className="text-xs font-medium mt-0.5" style={{ color: subColor }}>{sub}</p>
+              <div className="relative group inline-block mt-0.5 w-fit">
+                <p className="text-xs font-medium cursor-default underline decoration-dotted underline-offset-2 decoration-1"
+                  style={{ color: subColor, textDecorationColor: `${subColor}99` }}>{sub}</p>
+                <div className="pointer-events-none absolute bottom-full left-0 mb-2 z-50
+                  w-64 rounded-lg px-3 py-2 text-xs leading-relaxed shadow-xl
+                  opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                  style={{ background: 'rgba(15,23,42,0.97)', color: '#e2e8f0', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  {tooltip}
+                  <div className="absolute top-full left-4 -translate-y-0.5"
+                    style={{ borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '5px solid rgba(15,23,42,0.97)' }} />
+                </div>
+              </div>
             </div>
           ))}
         </div>
