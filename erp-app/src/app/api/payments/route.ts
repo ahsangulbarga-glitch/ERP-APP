@@ -63,28 +63,83 @@ export async function PATCH(req: NextRequest) {
   if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!canWrite(session.user.role, 'payments')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { id, milestoneId, milestoneStatus, ...updates } = await req.json()
+  const body = await req.json()
+  const { id, milestoneId, milestoneStatus, milestoneUpdates, newMilestones, deleteMilestoneIds, ...paymentUpdates } = body
 
-  // Update individual milestone
+  // ── Quick status toggle (Mark Paid button) ──
   if (milestoneId && milestoneStatus) {
-    const milestone = await prisma.paymentMilestone.update({
+    await prisma.paymentMilestone.update({
       where: { id: milestoneId },
       data: { status: milestoneStatus, paidAt: milestoneStatus === 'Paid' ? new Date() : undefined },
     })
-
-    // Recalculate collection %
     const payment = await prisma.payment.findUnique({ where: { id }, include: { milestones: true } })
     if (payment) {
       const paidAmount = payment.milestones.filter(m => m.status === 'Paid').reduce((sum, m) => sum + Number(m.amountSar), 0)
       const collectionPct = Number(payment.poValue) > 0 ? (paidAmount / Number(payment.poValue)) * 100 : 0
       await prisma.payment.update({ where: { id }, data: { collectionPct } })
     }
-
-    return NextResponse.json(milestone)
+    const refreshed = await prisma.payment.findUnique({ where: { id }, include: { milestones: true, kaeName: { select: { id: true, name: true } } } })
+    return NextResponse.json(refreshed)
   }
 
-  const updated = await prisma.payment.update({ where: { id }, data: updates, include: { milestones: true, kaeName: { select: { id: true, name: true } } } })
-  await writeAuditLog({ userId: session.user.id, userRole: session.user.role, targetTable: 'payments', rowId: id, action: 'UPDATE', newValue: JSON.stringify(updates), relatedId: { type: 'payment', id } })
+  // ── Full edit (from edit modal) ──
+
+  // 1. Delete removed milestones
+  if (Array.isArray(deleteMilestoneIds) && deleteMilestoneIds.length > 0) {
+    await prisma.paymentMilestone.deleteMany({ where: { id: { in: deleteMilestoneIds } } })
+  }
+
+  // 2. Update existing milestones
+  if (Array.isArray(milestoneUpdates)) {
+    for (const m of milestoneUpdates) {
+      await prisma.paymentMilestone.update({
+        where: { id: m.id },
+        data: {
+          phaseName: m.phaseName,
+          amountSar: parseFloat(m.amountSar),
+          dueDate: new Date(m.dueDate),
+          status: m.status,
+          paidAt: m.status === 'Paid' ? (m.paidAt ? new Date(m.paidAt) : new Date()) : null,
+        },
+      })
+    }
+  }
+
+  // 3. Create new milestones
+  if (Array.isArray(newMilestones) && newMilestones.length > 0) {
+    await prisma.paymentMilestone.createMany({
+      data: newMilestones.map((m: { phaseName: string; amountSar: string|number; dueDate: string; status: string }) => ({
+        paymentId: id,
+        phaseName: m.phaseName,
+        amountSar: parseFloat(String(m.amountSar)),
+        dueDate: new Date(m.dueDate),
+        status: m.status,
+        paidAt: m.status === 'Paid' ? new Date() : null,
+      })),
+    })
+  }
+
+  // 4. Update payment fields
+  const fieldUpdates: Record<string, unknown> = {}
+  if (paymentUpdates.poNumber   !== undefined) fieldUpdates.poNumber = paymentUpdates.poNumber
+  if (paymentUpdates.customerName !== undefined) fieldUpdates.customerName = paymentUpdates.customerName
+  if (paymentUpdates.poValue    !== undefined) fieldUpdates.poValue = parseFloat(paymentUpdates.poValue)
+  if (paymentUpdates.remarks    !== undefined) fieldUpdates.remarks = paymentUpdates.remarks
+
+  // 5. Recalculate collectionPct from all current milestones
+  const latest = await prisma.payment.findUnique({ where: { id }, include: { milestones: true } })
+  if (latest) {
+    const paidAmount = latest.milestones.filter(m => m.status === 'Paid').reduce((sum, m) => sum + Number(m.amountSar), 0)
+    const base = paymentUpdates.poValue ? parseFloat(paymentUpdates.poValue) : Number(latest.poValue)
+    fieldUpdates.collectionPct = base > 0 ? Math.min((paidAmount / base) * 100, 100) : 0
+  }
+
+  const updated = await prisma.payment.update({
+    where: { id },
+    data: fieldUpdates,
+    include: { milestones: true, kaeName: { select: { id: true, name: true } } },
+  })
+  await writeAuditLog({ userId: session.user.id, userRole: session.user.role, targetTable: 'payments', rowId: id, action: 'UPDATE', newValue: JSON.stringify(body), relatedId: { type: 'payment', id } })
   return NextResponse.json(updated)
 }
 

@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { SessionUser, Payment } from '@/types'
 import { canWrite } from '@/lib/rbac'
 import KPISummaryPanel from '@/components/shared/KPISummaryPanel'
-import { Plus, Download, CreditCard, ChevronDown, ChevronUp, X, Check, AlertTriangle, DollarSign, Activity, Trash2, CalendarDays } from 'lucide-react'
+import { Plus, Download, CreditCard, ChevronDown, ChevronUp, X, Check, AlertTriangle, DollarSign, Activity, Trash2, CalendarDays, Pencil } from 'lucide-react'
 
 const MILESTONE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   Pending: { bg: '#fffbeb', text: '#b45309', border: '#fde68a' },
@@ -29,6 +29,51 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
   const milestoneTotalSar = milestones.reduce((s, m) => s + (parseFloat(m.amountSar) || 0), 0)
   const poValueNum = parseFloat(form.poValue) || 0
   const milestoneBalance = poValueNum - milestoneTotalSar
+
+  // ── Edit modal state ──
+  type EditMilestone = { id?: string; phaseName: string; amountSar: string; dueDate: string; status: string; paidAt?: string; _deleted?: boolean }
+  const [editTarget, setEditTarget]     = useState<Payment | null>(null)
+  const [editForm,   setEditForm]       = useState({ poNumber: '', customerName: '', poValue: '', remarks: '' })
+  const [editMilestones, setEditMilestones] = useState<EditMilestone[]>([])
+
+  const openEdit = (row: Payment) => {
+    setEditTarget(row)
+    setEditForm({ poNumber: row.poNumber, customerName: row.customerName, poValue: String(row.poValue), remarks: row.remarks ?? '' })
+    setEditMilestones(row.milestones.map(m => ({
+      id: m.id, phaseName: m.phaseName, amountSar: String(m.amountSar),
+      dueDate: m.dueDate ? m.dueDate.slice(0, 10) : '',
+      status: m.status, paidAt: m.paidAt,
+    })))
+  }
+
+  const addEditMilestone = () => setEditMilestones(ms => [...ms, { phaseName: '', amountSar: '', dueDate: '', status: 'Pending' }])
+  const removeEditMilestone = (i: number) => setEditMilestones(ms => ms.map((m, idx) => idx === i ? { ...m, _deleted: true } : m))
+  const updateEditMilestone = (i: number, field: string, value: string) =>
+    setEditMilestones(ms => ms.map((m, idx) => idx === i ? { ...m, [field]: value } : m))
+
+  const handleEditSave = async () => {
+    if (!editTarget) return
+    const existing  = editMilestones.filter(m => m.id && !m._deleted)
+    const deleted   = editMilestones.filter(m => m.id && m._deleted).map(m => m.id as string)
+    const created   = editMilestones.filter(m => !m.id && !m._deleted && m.phaseName && m.amountSar && m.dueDate)
+    await fetch('/api/payments', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: editTarget.id,
+        ...editForm,
+        milestoneUpdates:   existing,
+        newMilestones:      created,
+        deleteMilestoneIds: deleted,
+      }),
+    })
+    setEditTarget(null)
+    load()
+  }
+
+  const editPoValueNum      = parseFloat(editForm.poValue) || 0
+  const editMilestoneTotalSar = editMilestones.filter(m => !m._deleted).reduce((s, m) => s + (parseFloat(m.amountSar) || 0), 0)
+  const editMilestoneBalance  = editPoValueNum - editMilestoneTotalSar
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -161,8 +206,14 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
                         <span className="text-xs text-slate-400">{row.milestones.length} milestones</span>
                       </div>
                     </div>
-                    <div className="shrink-0 text-slate-400">
-                      {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {canWrite(user.role, 'payments') && (
+                        <button onClick={e => { e.stopPropagation(); openEdit(row) }}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                      <span className="text-slate-400">{isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</span>
                     </div>
                   </button>
 
@@ -208,6 +259,125 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
           </div>
         )}
       </div>
+
+      {/* ── Edit Payment Modal ── */}
+      {editTarget && (
+        <div className="modal-overlay">
+          <div className="modal-box flex flex-col" style={{ maxWidth: 580, maxHeight: '92vh' }}>
+            <div className="flex items-center justify-between mb-4 shrink-0">
+              <div>
+                <h3 className="font-bold text-slate-800 text-base">Edit Payment Record</h3>
+                <p className="text-xs text-slate-400 mt-0.5 font-mono">{editTarget.poNumber}</p>
+              </div>
+              <button onClick={() => setEditTarget(null)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"><X size={16} /></button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 space-y-4 pr-1">
+              {/* PO Details */}
+              <div className="rounded-xl p-4 space-y-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">PO Details</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">PO Number</label>
+                    <input value={editForm.poNumber} onChange={e => setEditForm(f => ({ ...f, poNumber: e.target.value }))} className="form-input" />
+                  </div>
+                  <div>
+                    <label className="form-label">PO Value (SAR)</label>
+                    <input type="number" value={editForm.poValue} onChange={e => setEditForm(f => ({ ...f, poValue: e.target.value }))} className="form-input" />
+                  </div>
+                </div>
+                <div>
+                  <label className="form-label">Customer Name</label>
+                  <input value={editForm.customerName} onChange={e => setEditForm(f => ({ ...f, customerName: e.target.value }))} className="form-input" />
+                </div>
+                <div>
+                  <label className="form-label">Remarks</label>
+                  <textarea value={editForm.remarks} onChange={e => setEditForm(f => ({ ...f, remarks: e.target.value }))} rows={2} className="form-input resize-none" />
+                </div>
+              </div>
+
+              {/* Milestones */}
+              <div className="rounded-xl p-4 space-y-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Payment Milestones
+                    <span className="ml-2 normal-case font-normal text-slate-400">
+                      ({editMilestones.filter(m => !m._deleted).length} active)
+                    </span>
+                  </p>
+                  <button onClick={addEditMilestone}
+                    className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-all"
+                    style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>
+                    <Plus size={11} /> Add Milestone
+                  </button>
+                </div>
+
+                {editMilestones.filter(m => !m._deleted).length === 0 ? (
+                  <button onClick={addEditMilestone}
+                    className="w-full py-5 rounded-xl text-xs text-slate-400 border-2 border-dashed border-slate-200 hover:border-blue-300 hover:text-blue-400 transition-all flex flex-col items-center gap-1.5">
+                    <CalendarDays size={18} />
+                    No milestones — click to add
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    {editMilestones.map((m, i) => m._deleted ? null : (
+                      <div key={i} className="rounded-lg p-3 space-y-2" style={{ background: '#fff', border: '1px solid #e2e8f0' }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
+                            {m.id ? <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" /> : <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />}
+                            {m.id ? 'Existing' : 'New'} milestone
+                          </span>
+                          <button onClick={() => removeEditMilestone(i)} className="text-slate-300 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="form-label">Phase Name</label>
+                            <input value={m.phaseName} onChange={e => updateEditMilestone(i, 'phaseName', e.target.value)} className="form-input" placeholder="e.g. Mobilisation" />
+                          </div>
+                          <div>
+                            <label className="form-label">Amount (SAR)</label>
+                            <input type="number" value={m.amountSar} onChange={e => updateEditMilestone(i, 'amountSar', e.target.value)} className="form-input" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="form-label">Due Date</label>
+                            <input type="date" value={m.dueDate} onChange={e => updateEditMilestone(i, 'dueDate', e.target.value)} className="form-input" />
+                          </div>
+                          <div>
+                            <label className="form-label">Status</label>
+                            <select value={m.status} onChange={e => updateEditMilestone(i, 'status', e.target.value)} className="form-input">
+                              <option>Pending</option>
+                              <option>Paid</option>
+                              <option>Overdue</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Balance indicator */}
+                {editMilestones.filter(m => !m._deleted).length > 0 && editPoValueNum > 0 && (
+                  <div className="flex items-center justify-between text-xs px-1 pt-1">
+                    <span className="text-slate-400">PO Value: SAR {editPoValueNum.toLocaleString('en-SA', { maximumFractionDigits: 0 })}</span>
+                    <span className="text-slate-400">Milestones: SAR {editMilestoneTotalSar.toLocaleString('en-SA', { maximumFractionDigits: 0 })}</span>
+                    <span className="font-semibold" style={{ color: editMilestoneBalance === 0 ? '#16a34a' : editMilestoneBalance < 0 ? '#dc2626' : '#d97706' }}>
+                      {editMilestoneBalance === 0 ? '✓ Balanced' : editMilestoneBalance > 0 ? `SAR ${editMilestoneBalance.toLocaleString('en-SA', { maximumFractionDigits: 0 })} remaining` : `SAR ${Math.abs(editMilestoneBalance).toLocaleString('en-SA', { maximumFractionDigits: 0 })} over`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4 pt-4 shrink-0" style={{ borderTop: '1px solid #f1f5f9' }}>
+              <button onClick={() => setEditTarget(null)} className="btn-outline">Cancel</button>
+              <button onClick={handleEditSave} className="btn-primary"><Check size={14} /> Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="modal-overlay">
