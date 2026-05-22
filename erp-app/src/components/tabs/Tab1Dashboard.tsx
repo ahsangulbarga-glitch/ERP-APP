@@ -5,7 +5,7 @@ import { SessionUser } from '@/types'
 import { canAccessForecast } from '@/lib/rbac'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, LineChart, Legend,
+  ResponsiveContainer, LineChart, Legend,
   FunnelChart, Funnel, LabelList,
 } from 'recharts'
 import {
@@ -27,11 +27,6 @@ type RawPayment  = { poNumber: string; customerName: string; poValue: string|num
 type RawDocument = { status: string }
 type RawCustomer = { customerName: string; totalPoValue: string|number; completionPct: string|number }
 
-/* ── Colours ─────────────────────────────────────────────────────── */
-const STATUS_COLORS: Record<string, string> = {
-  Open: '#2563eb', Converted: '#16a34a', Lost: '#dc2626', OnHold: '#d97706',
-}
-const PIE_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#d97706', '#7c3aed']
 
 /* ── Helper ─────────────────────────────────────────────────────── */
 const fmt = (n: number) =>
@@ -68,14 +63,6 @@ const FunnelTip = ({ active, payload }: { active?: boolean; payload?: { payload:
   )
 }
 
-const PieTip = ({ active, payload }: { active?: boolean; payload?: { name: string; value: number }[] }) => {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="rounded-xl shadow-lg px-3 py-2 text-xs" style={{ background: '#0f172a', color: '#fff' }}>
-      <p className="font-semibold">{payload[0].name}: {payload[0].value}</p>
-    </div>
-  )
-}
 
 /* ── Reusable panel shells ─────────────────────────────────────────── */
 const Panel = ({ children, className = '', style = {} }: { children: React.ReactNode; className?: string; style?: React.CSSProperties }) => (
@@ -109,8 +96,8 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   })
   const [funnelData,   setFunnelData]   = useState<FunnelStage[]>([])
   const [topCustomers, setTopCustomers] = useState<TopCustomer[]>([])
-  const [trendData,    setTrendData]    = useState<{ month: string; quotes: number; pos: number }[]>([])
-  const [statusDist,   setStatusDist]   = useState<{ name: string; value: number }[]>([])
+  const [trendData,    setTrendData]    = useState<{ key: string; month: string; quotes: number; pos: number; collected: number }[]>([])
+  const [perfPeriod,   setPerfPeriod]   = useState<'3m'|'6m'|'1y'|'2y'>('1y')
   const [allUnpaidMilestones, setAllUnpaidMilestones] = useState<UpcomingMilestone[]>([])
   const [forecastWinRate,   setForecastWinRate]   = useState(60)
   const [forecastTimeline,  setForecastTimeline]  = useState(12)
@@ -180,13 +167,13 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
       )
 
       /* ── Monthly trend (real dates) ── */
-      const monthMap: Record<string, { label: string; quotes: number; pos: number }> = {}
+      const monthMap: Record<string, { label: string; quotes: number; pos: number; collected: number }> = {}
       quotes.forEach(q => {
         if (!q.qtnDate) return
         const d = new Date(q.qtnDate)
         const key   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
         const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-        if (!monthMap[key]) monthMap[key] = { label, quotes: 0, pos: 0 }
+        if (!monthMap[key]) monthMap[key] = { label, quotes: 0, pos: 0, collected: 0 }
         monthMap[key].quotes += Number(q.amountSar)
       })
       pos.forEach(p => {
@@ -194,19 +181,22 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
         const d = new Date(p.poDate)
         const key   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
         const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-        if (!monthMap[key]) monthMap[key] = { label, quotes: 0, pos: 0 }
+        if (!monthMap[key]) monthMap[key] = { label, quotes: 0, pos: 0, collected: 0 }
         monthMap[key].pos += Number(p.totalValueIncVat)
+      })
+      payments.forEach(p => {
+        if (!(p as RawPayment & { poDate?: string }).poDate) return
+        const d = new Date((p as RawPayment & { poDate?: string }).poDate!)
+        const key   = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+        const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+        if (!monthMap[key]) monthMap[key] = { label, quotes: 0, pos: 0, collected: 0 }
+        monthMap[key].collected += Number(p.poValue) * (Number(p.collectionPct) / 100)
       })
       setTrendData(
         Object.entries(monthMap)
           .sort(([a], [b]) => a.localeCompare(b))
-          .map(([, v]) => ({ month: v.label, quotes: v.quotes, pos: v.pos }))
+          .map(([key, v]) => ({ key, month: v.label, quotes: v.quotes, pos: v.pos, collected: v.collected }))
       )
-
-      /* ── Quote status distribution ── */
-      const statusCounts: Record<string, number> = {}
-      quotes.forEach(q => { statusCounts[q.status] = (statusCounts[q.status] || 0) + 1 })
-      setStatusDist(Object.entries(statusCounts).map(([name, value]) => ({ name, value })))
 
       /* ── Milestones ── */
       const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -232,6 +222,16 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   /* ── Derived (render-time, never stale) ── */
   const overdueMilestones  = allUnpaidMilestones.filter(m => m.daysUntilDue < 0).slice(0, 5)
   const upcomingMilestones = allUnpaidMilestones.filter(m => m.daysUntilDue >= 0).slice(0, 5)
+  /* ── Business performance filtered data ── */
+  const periodMonths: Record<string, number> = { '3m': 3, '6m': 6, '1y': 12, '2y': 24 }
+  const perfData = (() => {
+    const months = periodMonths[perfPeriod]
+    const cutoff = new Date()
+    cutoff.setMonth(cutoff.getMonth() - months)
+    const cutKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}`
+    return trendData.filter(d => d.key >= cutKey)
+  })()
+
   const conversionRate     = stats.totalQuoted > 0 ? ((stats.convertedQuotesValue / stats.totalQuoted) * 100).toFixed(1) : '0.0'
   const collectionRate     = stats.totalBilled  > 0 ? ((stats.totalCollected / stats.totalBilled) * 100).toFixed(1) : '0.0'
 
@@ -397,35 +397,60 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
         {/* Right column */}
         <div className="lg:col-span-2 flex flex-col gap-4">
 
-          {/* Quote Status Donut */}
+          {/* Business Performance Chart */}
           <Panel>
-            <PanelHead title="Quote Status" sub="Distribution by count" />
-            <div className="px-4 py-3">
-              {statusDist.length > 0 ? (
+            <PanelHead
+              icon={<TrendingUp size={14} className="text-violet-500" />}
+              title="Business Performance"
+              sub="Quotes · PO · Collections (SAR)"
+              right={
+                <div className="flex items-center gap-1">
+                  {(['3m','6m','1y','2y'] as const).map(p => (
+                    <button key={p} onClick={() => setPerfPeriod(p)}
+                      className="text-[10px] font-bold px-2 py-1 rounded-lg transition-all"
+                      style={perfPeriod === p
+                        ? { background: '#7c3aed', color: '#fff' }
+                        : { background: '#f1f5f9', color: '#64748b' }}>
+                      {p === '1y' ? '1Y' : p === '2y' ? '2Y' : p.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              }
+            />
+            <div className="px-3 py-3">
+              {perfData.length > 0 ? (
                 <>
-                  <ResponsiveContainer width="100%" height={130}>
-                    <PieChart>
-                      <Pie data={statusDist} dataKey="value" nameKey="name"
-                        cx="50%" cy="50%" innerRadius={32} outerRadius={55} paddingAngle={3}>
-                        {statusDist.map((entry, i) => (
-                          <Cell key={i} fill={STATUS_COLORS[entry.name] || PIE_COLORS[i % PIE_COLORS.length]} strokeWidth={0} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<PieTip />} />
-                    </PieChart>
+                  <ResponsiveContainer width="100%" height={155}>
+                    <ComposedChart data={perfData} barSize={9} margin={{ top: 2, right: 4, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="perfQuote" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#2563eb" /><stop offset="100%" stopColor="#2563eb" stopOpacity={0.4} />
+                        </linearGradient>
+                        <linearGradient id="perfPO" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#16a34a" /><stop offset="100%" stopColor="#16a34a" stopOpacity={0.4} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                      <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false}
+                        tickFormatter={v => `${(v/1000).toFixed(0)}K`} width={32} />
+                      <Tooltip content={<DarkTooltip />} cursor={{ fill: '#f8fafc' }} />
+                      <Bar dataKey="quotes"    name="Quoted"     fill="url(#perfQuote)" radius={[3,3,0,0]} />
+                      <Bar dataKey="pos"       name="PO Value"   fill="url(#perfPO)"    radius={[3,3,0,0]} />
+                      <Line type="monotone" dataKey="collected" name="Collected"
+                        stroke="#7c3aed" strokeWidth={2} dot={{ fill: '#7c3aed', r: 2, strokeWidth: 0 }} />
+                    </ComposedChart>
                   </ResponsiveContainer>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1.5 justify-center mt-1">
-                    {statusDist.map((entry, i) => (
-                      <div key={i} className="flex items-center gap-1.5 text-xs text-slate-600">
-                        <span className="w-2 h-2 rounded-full shrink-0"
-                          style={{ background: STATUS_COLORS[entry.name] || PIE_COLORS[i % PIE_COLORS.length] }} />
-                        {entry.name} ({entry.value})
+                  <div className="flex items-center justify-center gap-4 mt-1">
+                    {[['#2563eb','Quoted'],['#16a34a','PO Value'],['#7c3aed','Collected']].map(([color, label]) => (
+                      <div key={label} className="flex items-center gap-1 text-[10px] text-slate-500">
+                        <span className="w-2 h-2 rounded-full" style={{ background: color }} />{label}
                       </div>
                     ))}
                   </div>
                 </>
               ) : (
-                <div className="flex items-center justify-center h-24 text-slate-400 text-sm">No data</div>
+                <div className="flex items-center justify-center h-32 text-slate-400 text-sm">No data for period</div>
               )}
             </div>
           </Panel>
