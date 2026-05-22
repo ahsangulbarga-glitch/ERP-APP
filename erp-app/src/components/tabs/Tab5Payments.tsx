@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { SessionUser, Payment } from '@/types'
 import { canWrite } from '@/lib/rbac'
 import KPISummaryPanel from '@/components/shared/KPISummaryPanel'
-import { Plus, Download, CreditCard, ChevronDown, ChevronUp, X, Check, AlertTriangle, DollarSign, Activity } from 'lucide-react'
+import { Plus, Download, CreditCard, ChevronDown, ChevronUp, X, Check, AlertTriangle, DollarSign, Activity, Trash2, CalendarDays } from 'lucide-react'
 
 const MILESTONE_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   Pending: { bg: '#fffbeb', text: '#b45309', border: '#fde68a' },
@@ -19,6 +19,16 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
   const [filters, setFilters] = useState({ poNumber: '', customer: '', kaeId: '', milestoneStatus: '' })
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ poNumber: '', customerName: '', poValue: '', remarks: '' })
+  const [milestones, setMilestones] = useState<{ phaseName: string; amountSar: string; dueDate: string; status: string }[]>([])
+
+  const addMilestone = () => setMilestones(ms => [...ms, { phaseName: '', amountSar: '', dueDate: '', status: 'Pending' }])
+  const removeMilestone = (i: number) => setMilestones(ms => ms.filter((_, idx) => idx !== i))
+  const updateMilestone = (i: number, field: string, value: string) =>
+    setMilestones(ms => ms.map((m, idx) => idx === i ? { ...m, [field]: value } : m))
+
+  const milestoneTotalSar = milestones.reduce((s, m) => s + (parseFloat(m.amountSar) || 0), 0)
+  const poValueNum = parseFloat(form.poValue) || 0
+  const milestoneBalance = poValueNum - milestoneTotalSar
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -48,8 +58,25 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
   }
 
   const handleSave = async () => {
-    await fetch('/api/payments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
-    setShowForm(false); load()
+    const validMilestones = milestones.filter(m => m.phaseName && m.amountSar && m.dueDate)
+    await fetch('/api/payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...form,
+        milestones: validMilestones.length > 0 ? validMilestones.map(m => ({ phaseName: m.phaseName, amountSar: parseFloat(m.amountSar), dueDate: new Date(m.dueDate).toISOString(), status: m.status })) : undefined,
+      }),
+    })
+    setShowForm(false)
+    setForm({ poNumber: '', customerName: '', poValue: '', remarks: '' })
+    setMilestones([])
+    load()
+  }
+
+  const openForm = () => {
+    setForm({ poNumber: '', customerName: '', poValue: '', remarks: '' })
+    setMilestones([])
+    setShowForm(true)
   }
 
   const handleExport = () => {
@@ -79,7 +106,7 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
       <div className="section-header">
         <div className="flex gap-2">
           {canWrite(user.role, 'payments') && (
-            <button onClick={() => setShowForm(true)} className="btn-primary"><Plus size={14} /> New Payment</button>
+            <button onClick={openForm} className="btn-primary"><Plus size={14} /> New Payment</button>
           )}
           <button onClick={handleExport} className="btn-outline"><Download size={14} /> Export</button>
         </div>
@@ -184,33 +211,120 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
 
       {showForm && (
         <div className="modal-overlay">
-          <div className="modal-box" style={{ maxWidth: 420 }}>
-            <div className="flex items-center justify-between mb-5">
+          <div className="modal-box flex flex-col" style={{ maxWidth: 560, maxHeight: '90vh' }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4 shrink-0">
               <div>
                 <h3 className="font-bold text-slate-800 text-base">New Payment Record</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Link a payment to a PO</p>
+                <p className="text-xs text-slate-400 mt-0.5">Link a PO and define payment milestones</p>
               </div>
               <button onClick={() => setShowForm(false)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"><X size={16} /></button>
             </div>
-            <div className="space-y-3">
-              {[
-                { label: 'PO Number', key: 'poNumber' },
-                { label: 'Customer Name', key: 'customerName' },
-                { label: 'PO Value (SAR)', key: 'poValue', type: 'number' },
-              ].map(({ label, key, type = 'text' }) => (
-                <div key={key}>
-                  <label className="form-label">{label}</label>
-                  <input type={type} value={(form as Record<string, string>)[key]} onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} className="form-input" />
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 space-y-4 pr-1">
+
+              {/* PO Details */}
+              <div className="rounded-xl p-4 space-y-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">PO Details</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">PO Number</label>
+                    <input value={form.poNumber} onChange={e => setForm(f => ({ ...f, poNumber: e.target.value }))} className="form-input" placeholder="e.g. PO-ARC-2025-001" />
+                  </div>
+                  <div>
+                    <label className="form-label">PO Value (SAR)</label>
+                    <input type="number" value={form.poValue} onChange={e => setForm(f => ({ ...f, poValue: e.target.value }))} className="form-input" placeholder="0" />
+                  </div>
                 </div>
-              ))}
-              <div>
-                <label className="form-label">Remarks</label>
-                <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} className="form-input resize-none" />
+                <div>
+                  <label className="form-label">Customer Name</label>
+                  <input value={form.customerName} onChange={e => setForm(f => ({ ...f, customerName: e.target.value }))} className="form-input" placeholder="e.g. Saudi Aramco" />
+                </div>
+                <div>
+                  <label className="form-label">Remarks</label>
+                  <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} className="form-input resize-none" placeholder="Optional notes…" />
+                </div>
+              </div>
+
+              {/* Milestones */}
+              <div className="rounded-xl p-4 space-y-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Payment Milestones</p>
+                  <button onClick={addMilestone}
+                    className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-all"
+                    style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe' }}>
+                    <Plus size={11} /> Add Milestone
+                  </button>
+                </div>
+
+                {milestones.length === 0 ? (
+                  <button onClick={addMilestone}
+                    className="w-full py-6 rounded-xl text-xs text-slate-400 border-2 border-dashed border-slate-200 hover:border-blue-300 hover:text-blue-400 transition-all flex flex-col items-center gap-1.5">
+                    <CalendarDays size={20} />
+                    Click to add payment milestones (Mobilisation, Delivery, etc.)
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    {milestones.map((m, i) => (
+                      <div key={i} className="rounded-lg p-3 space-y-2" style={{ background: '#fff', border: '1px solid #e2e8f0' }}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-500">Milestone {i + 1}</span>
+                          <button onClick={() => removeMilestone(i)} className="text-slate-300 hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="form-label">Phase Name</label>
+                            <input value={m.phaseName} onChange={e => updateMilestone(i, 'phaseName', e.target.value)}
+                              className="form-input" placeholder="e.g. Mobilisation" />
+                          </div>
+                          <div>
+                            <label className="form-label">Amount (SAR)</label>
+                            <input type="number" value={m.amountSar} onChange={e => updateMilestone(i, 'amountSar', e.target.value)}
+                              className="form-input" placeholder="0" />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="form-label">Due Date</label>
+                            <input type="date" value={m.dueDate} onChange={e => updateMilestone(i, 'dueDate', e.target.value)}
+                              className="form-input" />
+                          </div>
+                          <div>
+                            <label className="form-label">Status</label>
+                            <select value={m.status} onChange={e => updateMilestone(i, 'status', e.target.value)} className="form-input">
+                              <option>Pending</option>
+                              <option>Paid</option>
+                              <option>Overdue</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Balance indicator */}
+                {milestones.length > 0 && poValueNum > 0 && (
+                  <div className="flex items-center justify-between text-xs px-1 pt-1">
+                    <span className="text-slate-400">PO Value: SAR {poValueNum.toLocaleString('en-SA', { maximumFractionDigits: 0 })}</span>
+                    <span className="text-slate-400">Milestones: SAR {milestoneTotalSar.toLocaleString('en-SA', { maximumFractionDigits: 0 })}</span>
+                    <span className="font-semibold" style={{ color: milestoneBalance === 0 ? '#16a34a' : milestoneBalance < 0 ? '#dc2626' : '#d97706' }}>
+                      {milestoneBalance === 0 ? '✓ Balanced' : milestoneBalance > 0 ? `SAR ${milestoneBalance.toLocaleString('en-SA', { maximumFractionDigits: 0 })} remaining` : `SAR ${Math.abs(milestoneBalance).toLocaleString('en-SA', { maximumFractionDigits: 0 })} over`}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="flex justify-end gap-2 mt-5 pt-4" style={{ borderTop: '1px solid #f1f5f9' }}>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2 mt-4 pt-4 shrink-0" style={{ borderTop: '1px solid #f1f5f9' }}>
               <button onClick={() => setShowForm(false)} className="btn-outline">Cancel</button>
-              <button onClick={handleSave} className="btn-primary"><Check size={14} /> Save Payment</button>
+              <button onClick={handleSave} disabled={!form.poNumber || !form.customerName || !form.poValue}
+                className="btn-primary disabled:opacity-40 disabled:cursor-not-allowed">
+                <Check size={14} /> Save Payment
+              </button>
             </div>
           </div>
         </div>
