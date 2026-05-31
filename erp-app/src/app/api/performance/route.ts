@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import prisma from '@/lib/db'
 
-const VIEWER_ROLES = ['P1_CEO', 'P2_ADMIN', 'P3_REGIONAL_MANAGER', 'P4_SALES_MANAGER']
+const VIEWER_ROLES = ['P1_CEO', 'P2_ADMIN', 'P4_REGIONAL_MANAGER', 'P5_SALES_MANAGER']
 
 export async function GET(req: NextRequest) {
   const session = await getSession()
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const isViewer = VIEWER_ROLES.includes(session.user.role)
 
-  /* ── Return user list for the selector dropdown ── */
+  /* â”€â”€ Return user list for the selector dropdown â”€â”€ */
   if (searchParams.get('list') === 'true') {
     if (!isViewer) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     const users = await prisma.user.findMany({
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(users)
   }
 
-  /* ── Resolve target user ── */
+  /* â”€â”€ Resolve target user â”€â”€ */
   const requestedId = searchParams.get('userId')
   const targetId = (isViewer && requestedId) ? requestedId : session.user.id
   const targetUser = await prisma.user.findUnique({ where: { id: targetId } })
@@ -30,10 +30,10 @@ export async function GET(req: NextRequest) {
 
   const today = new Date(); today.setHours(0, 0, 0, 0)
 
-  /* ══════════════════════════════════════════════════════════
-     P5 — Key Account Engineer
-  ══════════════════════════════════════════════════════════ */
-  if (targetUser.role === 'P5_KEY_ACCOUNT_ENGINEER') {
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     P5 â€” Key Account Engineer
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  if (targetUser.role === 'P6_KEY_ACCOUNT_ENGINEER') {
     const customers = await prisma.customer.findMany({ where: { assignedKaeId: targetId } })
     const pos       = await prisma.pOTracker.findMany({ where: { kaeName: targetUser.name } })
     const payments  = await prisma.payment.findMany({
@@ -82,10 +82,10 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  /* ══════════════════════════════════════════════════════════
-     P6 — Inside Sales Engineer
-  ══════════════════════════════════════════════════════════ */
-  if (targetUser.role === 'P6_INSIDE_SALES_ENGINEER') {
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     P6 â€” Inside Sales Engineer
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  if (targetUser.role === 'P7_INSIDE_SALES_ENGINEER') {
     const quotes = await prisma.quotation.findMany({ where: { kaeAssignedId: targetId } })
 
     const avgRevisions     = quotes.length > 0
@@ -127,15 +127,15 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  /* ══════════════════════════════════════════════════════════
-     P4 — Sales Manager (team overview)
-  ══════════════════════════════════════════════════════════ */
-  if (targetUser.role === 'P4_SALES_MANAGER' || targetUser.role === 'P3_REGIONAL_MANAGER') {
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     P4 â€” Sales Manager (team overview)
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  if (targetUser.role === 'P5_SALES_MANAGER' || targetUser.role === 'P4_REGIONAL_MANAGER') {
     const kaes = await prisma.user.findMany({
-      where: { role: 'P5_KEY_ACCOUNT_ENGINEER', isActive: true },
+      where: { role: 'P6_KEY_ACCOUNT_ENGINEER', isActive: true },
     })
     const ises = await prisma.user.findMany({
-      where: { role: 'P6_INSIDE_SALES_ENGINEER', isActive: true },
+      where: { role: 'P7_INSIDE_SALES_ENGINEER', isActive: true },
     })
 
     const kaeLeaderboard = await Promise.all(kaes.map(async kae => {
@@ -177,10 +177,10 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  /* ══════════════════════════════════════════════════════════
-     P7 — Accountant
-  ══════════════════════════════════════════════════════════ */
-  if (targetUser.role === 'P7_ACCOUNTANT') {
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     P7 â€” Accountant
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  if (targetUser.role === 'P8_ACCOUNTANT') {
     const milestones = await prisma.paymentMilestone.findMany({
       where: { status: { not: 'Paid' } },
     })
@@ -188,9 +188,9 @@ export async function GET(req: NextRequest) {
 
     const agingBuckets = [
       { label: 'Not Due',   min: -Infinity, max: 0   },
-      { label: '1–30 d',   min: 0,          max: 30  },
-      { label: '31–60 d',  min: 30,         max: 60  },
-      { label: '61–90 d',  min: 60,         max: 90  },
+      { label: '1â€“30 d',   min: 0,          max: 30  },
+      { label: '31â€“60 d',  min: 30,         max: 60  },
+      { label: '61â€“90 d',  min: 60,         max: 90  },
       { label: '91+ d',    min: 90,         max: Infinity },
     ]
     const aging = agingBuckets.map(({ label, min, max }) => ({
@@ -220,10 +220,10 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  /* ══════════════════════════════════════════════════════════
-     P8 — HR
-  ══════════════════════════════════════════════════════════ */
-  if (targetUser.role === 'P8_HR') {
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     P8 â€” HR
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+  if (targetUser.role === 'P9_HR') {
     const docs = await prisma.document.findMany({ orderBy: { remainingDaysForExpiry: 'asc' } })
 
     const total       = docs.length
@@ -235,10 +235,10 @@ export async function GET(req: NextRequest) {
 
     const expiryBuckets = [
       { label: 'Expired',    docs: docs.filter(d => d.remainingDaysForExpiry < 0) },
-      { label: '0–30 d',     docs: docs.filter(d => d.remainingDaysForExpiry >= 0  && d.remainingDaysForExpiry <= 30)  },
-      { label: '31–60 d',    docs: docs.filter(d => d.remainingDaysForExpiry > 30  && d.remainingDaysForExpiry <= 60)  },
-      { label: '61–90 d',    docs: docs.filter(d => d.remainingDaysForExpiry > 60  && d.remainingDaysForExpiry <= 90)  },
-      { label: '91–180 d',   docs: docs.filter(d => d.remainingDaysForExpiry > 90  && d.remainingDaysForExpiry <= 180) },
+      { label: '0â€“30 d',     docs: docs.filter(d => d.remainingDaysForExpiry >= 0  && d.remainingDaysForExpiry <= 30)  },
+      { label: '31â€“60 d',    docs: docs.filter(d => d.remainingDaysForExpiry > 30  && d.remainingDaysForExpiry <= 60)  },
+      { label: '61â€“90 d',    docs: docs.filter(d => d.remainingDaysForExpiry > 60  && d.remainingDaysForExpiry <= 90)  },
+      { label: '91â€“180 d',   docs: docs.filter(d => d.remainingDaysForExpiry > 90  && d.remainingDaysForExpiry <= 180) },
       { label: '180+ d',     docs: docs.filter(d => d.remainingDaysForExpiry > 180) },
     ].map(b => ({ label: b.label, count: b.docs.length }))
 
@@ -255,9 +255,9 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  /* ══════════════════════════════════════════════════════════
-     P1 CEO / P2 Admin — org-wide snapshot
-  ══════════════════════════════════════════════════════════ */
+  /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+     P1 CEO / P2 Admin â€” org-wide snapshot
+  â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
   const quotes   = await prisma.quotation.findMany()
   const pos      = await prisma.pOTracker.findMany()
   const payments = await prisma.payment.findMany({ include: { milestones: true } })

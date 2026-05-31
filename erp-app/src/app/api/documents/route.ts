@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { canRead, canWrite } from '@/lib/rbac'
 import { writeAuditLog } from '@/lib/audit'
@@ -75,7 +75,7 @@ export async function PATCH(req: NextRequest) {
 // Daily cron: refresh expiry status + send alerts
 export async function PUT() {
   const docs = await prisma.document.findMany()
-  const managerEmail = (await prisma.user.findFirst({ where: { role: 'P4_SALES_MANAGER' } }))?.email || ''
+  const managerEmail = (await prisma.user.findFirst({ where: { role: 'P5_SALES_MANAGER' } }))?.email || ''
 
   for (const doc of docs) {
     const { status, days } = computeDocStatus(doc.expiryDate)

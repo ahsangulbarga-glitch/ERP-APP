@@ -21,6 +21,7 @@ model User {
   sessions        UserSession[]
   quotations      Quotation[]        @relation("KAEQuotations")
   customers       Customer[]         @relation("KAECustomers")
+  managedCustomers Customer[]        @relation("KAMCustomers")
   payments        Payment[]          @relation("KAEPayments")
   auditLogs       AuditLog[]
   adminOverrides  AdminOverrideLog[] @relation("AdminOverrides")
@@ -46,20 +47,53 @@ model Quotation {
   customerName         String
   projectName          String
   amountSar            Float    @default(0)
+  discount             Float    @default(0)
   status               String   @default("Open")
   poNumber             String?
   kaeAssignedId        String?
   kaeAssigned          User?    @relation("KAEQuotations", fields: [kaeAssignedId], references: [id])
   clientContactName    String?
   clientContactDetails String?
+  subject              String?
+  rfqCode              String?
+  application          String?
+  poBox                String?
+  paymentTerms         String?
+  deliveryWeeks        String?
+  validityDays         Int      @default(30)
+  notes                String?
   remarks              String?
+  // ── Approval workflow ──────────────────────────────────────────────────────
+  approvalStatus       String   @default("Draft")
+  approvalComments     String?  // JSON: [{ action, role, by, comment, at }]
+  submittedAt          DateTime?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   createdBy            String?
 
+  lineItems            QuotationLineItem[]
   poTrackers           POTracker[]
   payments             Payment[]
   auditLogs            AuditLog[]  @relation("QuotationAudit")
+}
+
+model QuotationLineItem {
+  id             String    @id @default(cuid())
+  quotationId    String
+  quotation      Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  sNo            Int
+  itemType       String    @default("item")
+  description    String                    // item title / short name
+  specifications String?                   // detailed technical specifications
+  reference      String?
+  make           String?
+  qty            Float     @default(0)
+  unit           String?
+  rate           Float     @default(0)
+  amount         Float     @default(0)
+  delivery       String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 }
 
 model POTracker {
@@ -77,6 +111,7 @@ model POTracker {
   paymentTermsSplit    String?
   paymentCollectionPct Float    @default(0)
   paymentStatus        String   @default("Pending")
+  fulfilmentType       String   @default("FactoryOrder")  // Stock | FactoryOrder
   remarks              String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
@@ -90,6 +125,8 @@ model Customer {
   customerName      String
   assignedKaeId     String?
   assignedKae       User?     @relation("KAECustomers", fields: [assignedKaeId], references: [id])
+  assignedKamId     String?
+  assignedKam       User?     @relation("KAMCustomers", fields: [assignedKamId], references: [id])
   totalRfq          Int       @default(0)
   totalConverted    Int       @default(0)
   completionPct     Float     @default(0)
@@ -98,6 +135,29 @@ model Customer {
   firstActivityDate DateTime?
   lastActivityDate  DateTime?
   remarks           String?
+  // ── CRM Profile ──────────────────────────────────────────────────────────────
+  status            String    @default("Active")       // Active | Inactive | Prospect
+  industry          String?
+  website           String?
+  phone             String?
+  email             String?
+  primaryAddress    String?   // JSON: { street, city, region, postalCode, country }
+  keyPersonnel      String?   // JSON: [{ name, title, phone, email, isPrimary }]
+  communicationPref String?   // JSON: { preferredChannel, preferredLanguage, doNotCall }
+  leadSource        String?
+  // ── Billing / Finance ────────────────────────────────────────────────────────
+  priceTier         String    @default("STANDARD")     // STANDARD | SILVER | GOLD | PLATINUM
+  discountRate      Float     @default(0)
+  paymentTerms      String?
+  creditLimit       Float     @default(0)
+  creditBalance     Float     @default(0)              // outstanding balance
+  taxId             String?
+  taxExempt         Boolean   @default(false)
+  currency          String    @default("SAR")
+  // ── Shipping / Logistics ─────────────────────────────────────────────────────
+  shippingAddresses String?   // JSON: [{ label, street, city, region, postalCode, country, isDefault }]
+  defaultCarrier    String?
+  carrierAccount    String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   createdBy         String?
@@ -182,6 +242,59 @@ model AuditLog {
   payment     Payment?   @relation("PaymentAudit", fields: [paymentId], references: [id])
   documentId  String?
   document    Document?  @relation("DocumentAudit", fields: [documentId], references: [id])
+}
+
+model MaterialItem {
+  id               String   @id @default(cuid())
+  productRef       String   @unique
+  description      String                          // item title / short name
+  specifications   String?                         // detailed technical specifications
+  stockAvailability String  @default("In Stock")  // In Stock | Low Stock | Out of Stock | Reserved
+  quantity         Int      @default(0)
+  reservedQty      Int      @default(0)           // units reserved (subset of quantity)
+  reservedForPO    String?                         // PO number this reservation is against
+  orderToFactory   Boolean  @default(false)
+  unitCost         Float    @default(0)            // standard/weighted-average cost per unit (SAR)
+  remarks          String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  createdBy        String?
+
+  transactions     InventoryTransaction[]
+  lots             InventoryLot[]
+}
+
+model InventoryTransaction {
+  id              String       @id @default(cuid())
+  materialItemId  String
+  materialItem    MaterialItem @relation(fields: [materialItemId], references: [id], onDelete: Cascade)
+  type            String       // RECEIPT | ISSUE | ADJUSTMENT
+  quantity        Float        // positive = stock in, negative = stock out
+  unitCost        Float        @default(0)
+  reference       String?
+  notes           String?
+  transactionDate DateTime     @default(now())
+  createdAt       DateTime     @default(now())
+  createdBy       String?
+}
+
+model InventoryLot {
+  id             String       @id @default(cuid())
+  materialItemId String
+  materialItem   MaterialItem @relation(fields: [materialItemId], references: [id], onDelete: Cascade)
+  lotDate        DateTime     @default(now())
+  initialQty     Float        @default(0)
+  remainingQty   Float        @default(0)
+  unitCost       Float        @default(0)
+  reference      String?
+  createdAt      DateTime     @default(now())
+}
+
+model StockValuationConfig {
+  id        String   @id @default("singleton")
+  method    String   @default("WEIGHTED_AVERAGE") // FIFO | LIFO | WEIGHTED_AVERAGE
+  updatedAt DateTime @updatedAt
+  updatedBy String?
 }
 
 model AdminOverrideLog {

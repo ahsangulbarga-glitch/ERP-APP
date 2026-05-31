@@ -1,12 +1,19 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { SessionUser, Quotation, QuotationStatus } from '@/types'
-import { canWrite, canBulkImport } from '@/lib/rbac'
+import { SessionUser, Quotation, QuotationLineItem, QuotationStatus, ApprovalStatus, APPROVAL_STATUS_LABELS, MaterialItem } from '@/types'
+import { canWrite, canBulkImport, canSubmitForReview, canApproveAsDivMgr, canApproveAsSalesMgr, canMarkSubmitted, canRead } from '@/lib/rbac'
 import KPISummaryPanel from '@/components/shared/KPISummaryPanel'
-import { Plus, Download, Upload, FileText, Pencil, Check, X, DollarSign, TrendingUp, TrendingDown, Link2 } from 'lucide-react'
+import {
+  Plus, Download, Upload, FileText, Pencil, Check, X,
+  DollarSign, TrendingUp, TrendingDown, Link2, Trash2,
+  FilePlus, FileDown, ChevronDown, ChevronUp,
+  SendHorizonal, ThumbsUp, ThumbsDown, History, ClipboardCheck,
+  GitBranch, ShoppingCart, CornerDownRight,
+} from 'lucide-react'
 import DealChainModal from '@/components/shared/DealChainModal'
 
+// ─── status styles ────────────────────────────────────────────────────────────
 const STATUS_STYLES: Record<QuotationStatus, { bg: string; text: string; border: string }> = {
   Open:      { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
   Lost:      { bg: '#fef2f2', text: '#b91c1c', border: '#fecaca' },
@@ -14,19 +21,152 @@ const STATUS_STYLES: Record<QuotationStatus, { bg: string; text: string; border:
   OnHold:    { bg: '#fffbeb', text: '#b45309', border: '#fde68a' },
 }
 
-export default function Tab2Quotations({ user }: { user: SessionUser }) {
-  const [rows, setRows] = useState<Quotation[]>([])
-  const [loading, setLoading] = useState(true)
-  const [filters, setFilters] = useState({ dateFrom: '', dateTo: '', kaeId: '', customer: '', qtRef: '', status: '' })
-  const [showForm, setShowForm] = useState(false)
-  const [editRow, setEditRow] = useState<Quotation | null>(null)
+// ─── approval status styles ───────────────────────────────────────────────────
+const APPROVAL_STYLES: Record<ApprovalStatus, { bg: string; text: string; border: string }> = {
+  Draft:               { bg: '#f8fafc', text: '#64748b', border: '#e2e8f0' },
+  PendingDivMgrReview: { bg: '#fffbeb', text: '#b45309', border: '#fde68a' },
+  PendingSmReview:     { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
+  Approved:            { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' },
+  Submitted:           { bg: '#f0f9ff', text: '#0369a1', border: '#bae6fd' },
+}
+
+const APPROVAL_STEPS: ApprovalStatus[] = [
+  'Draft', 'PendingDivMgrReview', 'PendingSmReview', 'Approved', 'Submitted',
+]
+
+// ─── stock availability badge styles ─────────────────────────────────────────
+const STOCK_BADGE: Record<string, { bg: string; text: string; dot: string }> = {
+  'In Stock':     { bg: '#f0fdf4', text: '#15803d', dot: '#22c55e' },
+  'Low Stock':    { bg: '#fffbeb', text: '#b45309', dot: '#f59e0b' },
+  'Out of Stock': { bg: '#fef2f2', text: '#b91c1c', dot: '#ef4444' },
+  'Reserved':     { bg: '#eff6ff', text: '#1d4ed8', dot: '#3b82f6' },
+}
+
+// ─── blank helpers ────────────────────────────────────────────────────────────
+const blankItem = (): Omit<QuotationLineItem, 'id' | 'quotationId'> => ({
+  sNo: 1, itemType: 'item', description: '', specifications: '',
+  reference: '', make: 'TECOFI', qty: 1, unit: 'NO.S', rate: 0, amount: 0, delivery: '',
+})
+
+const blankHeader = (): Omit<QuotationLineItem, 'id' | 'quotationId'> => ({
+  sNo: 0, itemType: 'header', description: '', reference: '',
+  make: '', qty: 0, unit: '', rate: 0, amount: 0, delivery: '',
+})
+
+const blankForm = () => ({
+  qtRef: '', qtnDate: '', customerName: '', projectName: '', amountSar: '',
+  discount: '0', status: 'Open', kaeAssignedId: '', clientContactName: '',
+  clientContactDetails: '', remarks: '', poNumber: '',
+  subject: '', rfqCode: '', application: '', poBox: '',
+  paymentTerms: '', deliveryWeeks: '', validityDays: '30', notes: '',
+})
+
+// ─── revision grouping helpers ────────────────────────────────────────────────
+const baseOf   = (ref: string) => ref.replace(/-R\d+$/i, '')
+const revNumOf = (ref: string) => { const m = ref.match(/-R(\d+)$/i); return m ? parseInt(m[1]) : 0 }
+
+// ─── blank convert-to-SO form ─────────────────────────────────────────────────
+const blankSoForm = () => ({
+  poNumber: '', poDate: new Date().toISOString().split('T')[0],
+  paymentTermsSplit: '', fulfilmentType: 'FactoryOrder', remarks: '',
+})
+
+// ─── suggest revision ref ─────────────────────────────────────────────────────
+const suggestRevisionRef = (ref: string): string => {
+  const match = ref.match(/^(.*?)-R(\d+)$/i)
+  if (match) return `${match[1]}-R${parseInt(match[2]) + 1}`
+  return `${ref}-R1`
+}
+
+// ─── props ────────────────────────────────────────────────────────────────────
+interface PrefillData {
+  customerName: string
+  clientContactName?: string
+  clientContactDetails?: string
+  paymentTerms?: string
+  kaeAssignedId?: string
+}
+
+export default function Tab2Quotations({
+  user,
+  prefill,
+  onPrefillConsumed,
+}: {
+  user: SessionUser
+  prefill?: PrefillData | null
+  onPrefillConsumed?: () => void
+}) {
+  const [rows, setRows]           = useState<Quotation[]>([])
+  const [loading, setLoading]     = useState(true)
+  const [filters, setFilters]     = useState({ dateFrom: '', dateTo: '', kaeId: '', customer: '', qtRef: '', status: '' })
+  const [showForm, setShowForm]   = useState(false)
+  const [editRow, setEditRow]     = useState<Quotation | null>(null)
   const [chainSeed, setChainSeed] = useState<{ qtRef?: string; poNumber?: string } | null>(null)
   const [formError, setFormError] = useState('')
-  const [form, setForm] = useState({
-    qtRef: '', qtnDate: '', customerName: '', projectName: '', amountSar: '',
-    status: 'Open', kaeAssignedId: '', clientContactName: '', clientContactDetails: '', remarks: '', poNumber: '',
-  })
 
+  // Approval workflow state
+  const [approvalModal, setApprovalModal] = useState<{ row: Quotation; action: string; label: string } | null>(null)
+  const [approvalComment, setApprovalComment] = useState('')
+  const [approvalError, setApprovalError]     = useState('')
+  const [historyRow, setHistoryRow]           = useState<Quotation | null>(null)
+
+  // Revision state
+  const [isRevision, setIsRevision]           = useState(false)
+  const [revisionSourceRef, setRevisionSourceRef] = useState('')
+
+  // Form state
+  const [form, setForm]           = useState(blankForm())
+  const [lineItems, setLineItems] = useState<Omit<QuotationLineItem, 'id' | 'quotationId'>[]>([])
+  const [showItems, setShowItems] = useState(true)
+
+  // Materials catalog for reference lookup (keyed by productRef uppercase)
+  const [materials, setMaterials] = useState<Map<string, MaterialItem>>(new Map())
+
+  // Convert to Sales Order modal state
+  const [soModal, setSoModal]   = useState<Quotation | null>(null)
+  const [soForm,  setSoForm]    = useState(blankSoForm())
+  const [soLoading, setSoLoading] = useState(false)
+  const [soError,   setSoError]   = useState('')
+
+  // ── load materials for reference lookup ─────────────────────────────────────
+  const loadMaterials = useCallback(async () => {
+    try {
+      const res = await fetch('/api/materials')
+      const data = await res.json()
+      if (Array.isArray(data)) {
+        const map = new Map<string, MaterialItem>()
+        data.forEach((m: MaterialItem) => map.set(m.productRef.toUpperCase().trim(), m))
+        setMaterials(map)
+      }
+    } catch { /* ignore — stock lookup is best-effort */ }
+  }, [])
+
+  useEffect(() => { if (showForm) loadMaterials() }, [showForm, loadMaterials])
+
+  // ── handle prefill from customers tab ──────────────────────────────────────
+  useEffect(() => {
+    if (!prefill) return
+    setEditRow(null)
+    setIsRevision(false)
+    setRevisionSourceRef('')
+    setFormError('')
+    setForm({
+      ...blankForm(),
+      customerName:         prefill.customerName,
+      clientContactName:    prefill.clientContactName    || '',
+      clientContactDetails: prefill.clientContactDetails || '',
+      paymentTerms:         prefill.paymentTerms         || '',
+      kaeAssignedId:        prefill.kaeAssignedId        || '',
+      qtnDate:              new Date().toISOString().split('T')[0],
+    })
+    setLineItems([{ ...blankItem() }])
+    setShowItems(true)
+    setShowForm(true)
+    onPrefillConsumed?.()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill])
+
+  // ── data loading ────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -46,54 +186,279 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
 
   useEffect(() => { load() }, [load])
 
+  // ── KPIs ────────────────────────────────────────────────────────────────────
   const kpis = [
     { label: 'Total Quoted', value: `SAR ${rows.reduce((s, r) => s + Number(r.amountSar), 0).toLocaleString('en-SA', { maximumFractionDigits: 0 })}`, color: 'blue' as const, icon: <DollarSign size={16} /> },
-    { label: 'Open Quotes', value: rows.filter(r => r.status === 'Open').length, color: 'cyan' as const, icon: <TrendingUp size={16} /> },
-    { label: 'Converted', value: rows.filter(r => r.status === 'Converted').length, color: 'green' as const, icon: <Check size={16} /> },
-    { label: 'Lost Value', value: `SAR ${rows.filter(r => r.status === 'Lost').reduce((s, r) => s + Number(r.amountSar), 0).toLocaleString('en-SA', { maximumFractionDigits: 0 })}`, color: 'red' as const, icon: <TrendingDown size={16} /> },
+    { label: 'Open Quotes',  value: rows.filter(r => r.status === 'Open').length,      color: 'cyan' as const,  icon: <TrendingUp size={16} /> },
+    { label: 'Converted',    value: rows.filter(r => r.status === 'Converted').length, color: 'green' as const, icon: <Check size={16} /> },
+    { label: 'Lost Value',   value: `SAR ${rows.filter(r => r.status === 'Lost').reduce((s, r) => s + Number(r.amountSar), 0).toLocaleString('en-SA', { maximumFractionDigits: 0 })}`, color: 'red' as const, icon: <TrendingDown size={16} /> },
   ]
 
-  const resetForm = () => setForm({ qtRef: '', qtnDate: '', customerName: '', projectName: '', amountSar: '', status: 'Open', kaeAssignedId: '', clientContactName: '', clientContactDetails: '', remarks: '', poNumber: '' })
+  // ── form helpers ────────────────────────────────────────────────────────────
+  const resetForm = () => {
+    setForm(blankForm())
+    setLineItems([{ ...blankItem() }])
+    setShowItems(true)
+    setFormError('')
+    setIsRevision(false)
+    setRevisionSourceRef('')
+  }
 
+  const openNew = () => { setEditRow(null); resetForm(); setShowForm(true) }
+
+  const openEdit = async (row: Quotation) => {
+    setEditRow(row)
+    setIsRevision(false)
+    setRevisionSourceRef('')
+    setFormError('')
+    setForm({
+      qtRef: row.qtRef, qtnDate: row.qtnDate.split('T')[0],
+      customerName: row.customerName, projectName: row.projectName,
+      amountSar: String(row.amountSar), discount: String(row.discount ?? 0),
+      status: row.status, kaeAssignedId: row.kaeAssignedId || '',
+      clientContactName: row.clientContactName || '',
+      clientContactDetails: row.clientContactDetails || '',
+      remarks: row.remarks || '', poNumber: row.poNumber || '',
+      subject: row.subject || '', rfqCode: row.rfqCode || '',
+      application: row.application || '', poBox: row.poBox || '',
+      paymentTerms: row.paymentTerms || '', deliveryWeeks: row.deliveryWeeks || '',
+      validityDays: String(row.validityDays ?? 30), notes: row.notes || '',
+    })
+    try {
+      const res = await fetch(`/api/quotations?qtRef=${encodeURIComponent(row.qtRef)}&withItems=1`)
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0 && Array.isArray(data[0].lineItems)) {
+        setLineItems(data[0].lineItems.map((li: QuotationLineItem) => ({
+          sNo: li.sNo, itemType: li.itemType || 'item',
+          description: li.description, specifications: li.specifications || '',
+          reference: li.reference || '', make: li.make || '',
+          qty: li.qty, unit: li.unit || '', rate: li.rate, amount: li.amount, delivery: li.delivery || '',
+        })))
+      } else { setLineItems([]) }
+    } catch { setLineItems([]) }
+    setShowItems(true)
+    setShowForm(true)
+  }
+
+  // ── open revision ────────────────────────────────────────────────────────────
+  // Creates a NEW quotation pre-filled from source — original is preserved
+  const openRevise = async (row: Quotation) => {
+    setEditRow(null)             // null → handleSave uses POST (creates new)
+    setIsRevision(true)
+    setRevisionSourceRef(row.qtRef)
+    setFormError('')
+    setForm({
+      qtRef: suggestRevisionRef(row.qtRef),
+      qtnDate: new Date().toISOString().split('T')[0],
+      customerName: row.customerName, projectName: row.projectName,
+      amountSar: String(row.amountSar), discount: String(row.discount ?? 0),
+      status: 'Open', kaeAssignedId: row.kaeAssignedId || '',
+      clientContactName: row.clientContactName || '',
+      clientContactDetails: row.clientContactDetails || '',
+      remarks: row.remarks || '', poNumber: '',
+      subject: row.subject || '', rfqCode: row.rfqCode || '',
+      application: row.application || '', poBox: row.poBox || '',
+      paymentTerms: row.paymentTerms || '', deliveryWeeks: row.deliveryWeeks || '',
+      validityDays: String(row.validityDays ?? 30), notes: row.notes || '',
+    })
+    try {
+      const res = await fetch(`/api/quotations?qtRef=${encodeURIComponent(row.qtRef)}&withItems=1`)
+      const data = await res.json()
+      if (Array.isArray(data) && data.length > 0 && Array.isArray(data[0].lineItems)) {
+        setLineItems(data[0].lineItems.map((li: QuotationLineItem) => ({
+          sNo: li.sNo, itemType: li.itemType || 'item',
+          description: li.description, specifications: li.specifications || '',
+          reference: li.reference || '', make: li.make || '',
+          qty: li.qty, unit: li.unit || '', rate: li.rate, amount: li.amount, delivery: li.delivery || '',
+        })))
+      } else { setLineItems([{ ...blankItem() }]) }
+    } catch { setLineItems([{ ...blankItem() }]) }
+    setShowItems(true)
+    setShowForm(true)
+  }
+
+  // ── line item helpers ───────────────────────────────────────────────────────
+  const updateItem = (idx: number, field: string, value: string | number) => {
+    setLineItems(prev => {
+      const next = prev.map((item, i) => {
+        if (i !== idx) return item
+        const updated = { ...item, [field]: value }
+        // auto-calculate amount
+        if (field === 'qty' || field === 'rate') {
+          const q = field === 'qty' ? Number(value) : Number(updated.qty)
+          const r = field === 'rate' ? Number(value) : Number(updated.rate)
+          updated.amount = parseFloat((q * r).toFixed(2))
+        }
+        // Reference lookup → auto-fill description & specs if currently empty
+        if (field === 'reference' && typeof value === 'string') {
+          const mat = materials.get(value.toUpperCase().trim())
+          if (mat) {
+            if (!updated.description) updated.description = mat.description
+            if (!updated.specifications && mat.specifications) updated.specifications = mat.specifications
+          }
+        }
+        return updated
+      })
+      // Re-number all items by array position
+      return next.map((item, i) => ({ ...item, sNo: i + 1 }))
+    })
+  }
+
+  const addItem   = () => setLineItems(prev => [...prev, { ...blankItem(), sNo: prev.length + 1 }])
+  const addHeader = () => setLineItems(prev => [...prev, { ...blankHeader(), sNo: prev.length + 1 }])
+  const removeItem = (idx: number) =>
+    setLineItems(prev => prev.filter((_, i) => i !== idx).map((item, i) => ({ ...item, sNo: i + 1 })))
+
+  // ── serial numbers: skip section headers ────────────────────────────────────
+  // Items get sequential numbers; headers get 0 (not shown)
+  const displayNumbers: number[] = (() => {
+    const nums: number[] = []
+    let n = 0
+    for (const item of lineItems) {
+      nums.push(item.itemType === 'header' ? 0 : ++n)
+    }
+    return nums
+  })()
+
+  // ── totals ──────────────────────────────────────────────────────────────────
+  const itemsSubtotal = lineItems.reduce((s, li) => s + Number(li.amount), 0)
+  const discountVal   = parseFloat(form.discount) || 0
+  const netTotal      = itemsSubtotal - discountVal
+
+  useEffect(() => {
+    if (lineItems.length > 0 && itemsSubtotal > 0)
+      setForm(f => ({ ...f, amountSar: String(Math.round(netTotal * 100) / 100) }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemsSubtotal, discountVal])
+
+  // ── save ────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setFormError('')
     const method = editRow ? 'PATCH' : 'POST'
-    const body = editRow ? { id: editRow.id, ...form } : form
+    const body   = editRow ? { id: editRow.id, ...form, lineItems } : { ...form, lineItems }
     const res = await fetch('/api/quotations', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: 'Save failed' }))
       setFormError(err.error || 'Save failed'); return
     }
-    setShowForm(false); setEditRow(null); setFormError(''); load()
+    setShowForm(false); setEditRow(null); setFormError(''); setIsRevision(false); setRevisionSourceRef(''); load()
   }
 
+  // ── status change ───────────────────────────────────────────────────────────
   const handleStatusChange = async (id: string, status: string) => {
     await fetch('/api/quotations', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, status }) })
     load()
   }
 
+  // ── approval actions ────────────────────────────────────────────────────────
+  const openApprovalModal = (row: Quotation, action: string, label: string) => {
+    setApprovalModal({ row, action, label }); setApprovalComment(''); setApprovalError('')
+  }
+
+  const handleApprovalAction = async () => {
+    if (!approvalModal) return
+    setApprovalError('')
+    const res = await fetch('/api/quotations/approve', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: approvalModal.row.id, action: approvalModal.action, comment: approvalComment }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: 'Action failed' }))
+      setApprovalError(err.error || 'Action failed'); return
+    }
+    setApprovalModal(null); load()
+  }
+
+  // ── export / import ─────────────────────────────────────────────────────────
   const handleExport = () => {
     const params = new URLSearchParams({ tab: 'quotations', ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) })
     window.open(`/api/export?${params}`)
   }
-
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return
     const fd = new FormData(); fd.append('file', file); fd.append('tab', 'quotations')
     await fetch('/api/import', { method: 'POST', body: fd }); load()
   }
+  const handleDownloadPDF = (row: Quotation) => window.open(`/api/quotations/${row.id}/pdf`, '_blank', 'noopener,noreferrer')
 
-  const openEdit = (row: Quotation) => {
-    setEditRow(row); setFormError('')
-    setForm({ qtRef: row.qtRef, qtnDate: row.qtnDate.split('T')[0], customerName: row.customerName, projectName: row.projectName, amountSar: String(row.amountSar), status: row.status, kaeAssignedId: row.kaeAssignedId || '', clientContactName: row.clientContactName || '', clientContactDetails: row.clientContactDetails || '', remarks: row.remarks || '', poNumber: row.poNumber || '' })
-    setShowForm(true)
+  // ── Convert to Sales Order ──────────────────────────────────────────────────
+  const openSoModal = (row: Quotation) => {
+    setSoModal(row)
+    setSoForm({ ...blankSoForm(), paymentTermsSplit: row.paymentTerms || '' })
+    setSoError('')
   }
 
+  const handleConvertToSO = async () => {
+    if (!soModal) return
+    if (!soForm.poNumber.trim()) { setSoError('PO Number is required'); return }
+    if (!soForm.poDate)          { setSoError('PO Date is required');    return }
+    setSoLoading(true); setSoError('')
+    try {
+      // 1. Create PO Tracker entry
+      const poRes = await fetch('/api/po-tracker', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerName:      soModal.customerName,
+          projectName:       soModal.projectName,
+          kaeName:           soModal.kaeAssigned?.name || '',
+          qtRef:             soModal.qtRef,
+          poNumber:          soForm.poNumber.trim(),
+          poDate:            soForm.poDate,
+          poAmountExVat:     soModal.amountSar,
+          paymentTermsSplit: soForm.paymentTermsSplit,
+          fulfilmentType:    soForm.fulfilmentType,
+          remarks:           soForm.remarks,
+        }),
+      })
+      if (!poRes.ok) {
+        const err = await poRes.json().catch(() => ({ error: 'Failed to create PO entry' }))
+        setSoError(err.error || 'Failed to create PO entry'); return
+      }
+      // 2. Mark quotation as Converted
+      await fetch('/api/quotations', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: soModal.id, status: 'Converted' }),
+      })
+      setSoModal(null); load()
+    } catch { setSoError('An unexpected error occurred') }
+    finally  { setSoLoading(false) }
+  }
+
+  // ── stock badge helper ───────────────────────────────────────────────────────
+  const getStockInfo = (ref: string) => {
+    if (!ref?.trim()) return null
+    return materials.get(ref.toUpperCase().trim()) ?? null
+  }
+
+  // ── Group rows: originals first, revisions as indented sub-rows ──────────────
+  const displayRows: Array<{ row: Quotation; isRevision: boolean; parentRef?: string }> = (() => {
+    const map = new Map<string, Quotation[]>()
+    for (const r of rows) {
+      const base = baseOf(r.qtRef)
+      if (!map.has(base)) map.set(base, [])
+      map.get(base)!.push(r)
+    }
+    const result: Array<{ row: Quotation; isRevision: boolean; parentRef?: string }> = []
+    const added = new Set<string>()
+    for (const row of rows) {
+      const base = baseOf(row.qtRef)
+      if (!added.has(base)) {
+        added.add(base)
+        const group = (map.get(base) ?? []).sort((a, b) => revNumOf(a.qtRef) - revNumOf(b.qtRef))
+        for (const r of group) {
+          result.push({ row: r, isRevision: revNumOf(r.qtRef) > 0, parentRef: revNumOf(r.qtRef) > 0 ? base : undefined })
+        }
+      }
+    }
+    return result
+  })()
+
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full">
       <KPISummaryPanel kpis={kpis} />
 
-      {/* Filters */}
+      {/* ── Filters ─────────────────────────────────────────────────────────── */}
       <div className="filter-bar">
         <input type="date" value={filters.dateFrom} onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))} className="input-sm" />
         <span className="text-slate-400 text-xs">to</span>
@@ -112,17 +477,13 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
         )}
       </div>
 
-      {/* Action Bar */}
+      {/* ── Action Bar ──────────────────────────────────────────────────────── */}
       <div className="section-header">
         <div className="flex items-center gap-2 flex-wrap">
           {canWrite(user.role, 'quotations') && (
-            <button onClick={() => { setShowForm(true); setEditRow(null); setFormError(''); resetForm() }} className="btn-primary">
-              <Plus size={14} /> New Quote
-            </button>
+            <button onClick={openNew} className="btn-primary"><Plus size={14} /> New Quote</button>
           )}
-          <button onClick={handleExport} className="btn-outline">
-            <Download size={14} /> Export
-          </button>
+          <button onClick={handleExport} className="btn-outline"><Download size={14} /> Export</button>
           {canBulkImport(user.role, 'quotations') && (
             <label className="btn-outline cursor-pointer">
               <Upload size={14} /> Import
@@ -133,40 +494,48 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
         <span className="text-xs text-slate-400">{rows.length} record{rows.length !== 1 ? 's' : ''}</span>
       </div>
 
-      {/* Table */}
+      {/* ── Table ───────────────────────────────────────────────────────────── */}
       <div className="flex-1 overflow-auto table-container">
         {loading ? (
-          <div className="p-4 space-y-2">
-            {[...Array(6)].map((_, i) => <div key={i} className="h-10 rounded-lg shimmer" />)}
-          </div>
+          <div className="p-4 space-y-2">{[...Array(6)].map((_, i) => <div key={i} className="h-10 rounded-lg shimmer" />)}</div>
         ) : rows.length === 0 ? (
-          <div className="empty-state">
-            <FileText size={36} className="opacity-20" />
-            <p className="text-sm font-medium">No quotations found</p>
-            <p className="text-xs">Try adjusting your filters</p>
-          </div>
+          <div className="empty-state"><FileText size={36} className="opacity-20" /><p className="text-sm font-medium">No quotations found</p><p className="text-xs">Try adjusting your filters</p></div>
         ) : (
           <table className="data-table">
             <thead>
               <tr>
-                <th>QT Ref</th>
-                <th>Date</th>
-                <th>Customer</th>
-                <th>Project</th>
-                <th className="text-right">Amount (SAR)</th>
-                <th>Status</th>
-                <th>KAE</th>
-                <th>Contact</th>
-                <th>Remarks</th>
-                <th></th>
+                <th>QT Ref</th><th>Date</th><th>Customer</th><th>Project</th>
+                <th className="text-right">Amount (SAR)</th><th>Status</th><th>Approval</th>
+                <th>KAE</th><th>Contact</th><th>Remarks</th><th></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => {
-                const s = STATUS_STYLES[row.status]
+              {displayRows.map(({ row, isRevision, parentRef }) => {
+                const st    = STATUS_STYLES[row.status]
+                const approval = (row.approvalStatus || 'Draft') as ApprovalStatus
+                const apSt  = APPROVAL_STYLES[approval] || APPROVAL_STYLES.Draft
+                const showSubmit     = canSubmitForReview(user.role)   && approval === 'Draft'
+                const showDivApprove = canApproveAsDivMgr(user.role)   && approval === 'PendingDivMgrReview'
+                const showSmApprove  = canApproveAsSalesMgr(user.role) && approval === 'PendingSmReview'
+                const showMarkSub    = canMarkSubmitted(user.role)      && approval === 'Approved'
+                const canSO          = canRead(user.role, 'poTracker') && row.status !== 'Converted'
                 return (
-                  <tr key={row.id}>
-                    <td className="font-mono text-xs font-bold" style={{ color: '#2563eb', minWidth: 140 }}>{row.qtRef}</td>
+                  <tr key={row.id}
+                    style={isRevision
+                      ? { background: '#fafaf7', borderLeft: '3px solid #f59e0b' }
+                      : {}}>
+                    {/* QT Ref — indented with arrow for revisions */}
+                    <td style={{ minWidth: 160, paddingLeft: isRevision ? 6 : undefined }}>
+                      {isRevision && (
+                        <div className="flex items-center gap-1 text-xs text-amber-500 mb-0.5">
+                          <CornerDownRight size={10} />
+                          <span style={{ fontSize: 9, color: '#94a3b8' }}>rev of {parentRef}</span>
+                        </div>
+                      )}
+                      <span className="font-mono text-xs font-bold" style={{ color: isRevision ? '#d97706' : '#2563eb' }}>
+                        {row.qtRef}
+                      </span>
+                    </td>
                     <td className="text-slate-500 text-xs" style={{ minWidth: 90 }}>{new Date(row.qtnDate).toLocaleDateString('en-GB')}</td>
                     <td className="font-semibold text-slate-800" style={{ minWidth: 140 }}>{row.customerName}</td>
                     <td className="text-slate-500 text-xs" style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.projectName}</td>
@@ -177,29 +546,103 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
                       {canWrite(user.role, 'quotations') ? (
                         <select value={row.status} onChange={e => handleStatusChange(row.id, e.target.value)}
                           className="text-xs font-semibold px-2.5 py-1 rounded-full border cursor-pointer outline-none transition-colors"
-                          style={{ background: s.bg, color: s.text, borderColor: s.border }}>
-                          <option value="Open">Open</option>
-                          <option value="Lost">Lost</option>
-                          <option value="Converted">Converted</option>
-                          <option value="OnHold">On Hold</option>
+                          style={{ background: st.bg, color: st.text, borderColor: st.border }}>
+                          <option value="Open">Open</option><option value="Lost">Lost</option>
+                          <option value="Converted">Converted</option><option value="OnHold">On Hold</option>
                         </select>
                       ) : (
                         <span className="text-xs font-semibold px-2.5 py-1 rounded-full border inline-block"
-                          style={{ background: s.bg, color: s.text, borderColor: s.border }}>{row.status}</span>
+                          style={{ background: st.bg, color: st.text, borderColor: st.border }}>{row.status}</span>
                       )}
+                    </td>
+                    <td style={{ minWidth: 160 }}>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full border inline-block w-fit"
+                          style={{ background: apSt.bg, color: apSt.text, borderColor: apSt.border }}>
+                          {APPROVAL_STATUS_LABELS[approval]}
+                        </span>
+                        <div className="flex items-center gap-0.5 flex-wrap">
+                          {showSubmit && (
+                            <button onClick={() => openApprovalModal(row, 'submit', 'Submit for Review')}
+                              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg transition-all font-medium"
+                              style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                              <SendHorizonal size={10} /> Submit
+                            </button>
+                          )}
+                          {showDivApprove && (<>
+                            <button onClick={() => openApprovalModal(row, 'divApprove', 'Approve (Div Mgr)')}
+                              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg font-medium"
+                              style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>
+                              <ThumbsUp size={10} /> Approve
+                            </button>
+                            <button onClick={() => openApprovalModal(row, 'divReject', 'Reject (Div Mgr)')}
+                              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg font-medium"
+                              style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+                              <ThumbsDown size={10} /> Reject
+                            </button>
+                          </>)}
+                          {showSmApprove && (<>
+                            <button onClick={() => openApprovalModal(row, 'smApprove', 'Approve (Sales Mgr)')}
+                              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg font-medium"
+                              style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>
+                              <ThumbsUp size={10} /> Approve
+                            </button>
+                            <button onClick={() => openApprovalModal(row, 'smReject', 'Reject (Sales Mgr)')}
+                              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg font-medium"
+                              style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+                              <ThumbsDown size={10} /> Reject
+                            </button>
+                          </>)}
+                          {showMarkSub && (
+                            <button onClick={() => openApprovalModal(row, 'markSubmitted', 'Mark as Submitted')}
+                              className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg font-medium"
+                              style={{ background: '#f0f9ff', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                              <ClipboardCheck size={10} /> Submitted
+                            </button>
+                          )}
+                          {row.approvalComments && (
+                            <button onClick={() => setHistoryRow(row)}
+                              className="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+                              title="View approval history">
+                              <History size={11} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="text-slate-500 text-xs" style={{ minWidth: 100 }}>{row.kaeAssigned?.name || '—'}</td>
                     <td className="text-slate-500 text-xs" style={{ minWidth: 100 }}>{row.clientContactName || '—'}</td>
                     <td className="text-slate-400 text-xs" style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.remarks || '—'}</td>
-                    <td style={{ minWidth: 64 }}>
-                      <div className="flex items-center gap-0.5">
+                    <td style={{ minWidth: 148 }}>
+                      <div className="flex items-center gap-0.5 flex-wrap">
+                        {/* PDF */}
+                        <button onClick={() => handleDownloadPDF(row)}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 transition-all" title="View PDF">
+                          <FileDown size={13} />
+                        </button>
+                        {/* Deal chain */}
                         <button onClick={() => setChainSeed({ qtRef: row.qtRef, poNumber: row.poNumber })}
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-all" title="View deal chain">
                           <Link2 size={13} />
                         </button>
+                        {/* Convert to Sales Order */}
+                        {canSO && (
+                          <button onClick={() => openSoModal(row)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-green-600 hover:bg-green-50 transition-all" title="Convert to Sales Order">
+                            <ShoppingCart size={13} />
+                          </button>
+                        )}
+                        {/* Revise */}
+                        {canWrite(user.role, 'quotations') && (
+                          <button onClick={() => openRevise(row)}
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-all" title="Create revision">
+                            <GitBranch size={13} />
+                          </button>
+                        )}
+                        {/* Edit */}
                         {canWrite(user.role, 'quotations') && (
                           <button onClick={() => openEdit(row)}
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
+                            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all" title="Edit">
                             <Pencil size={13} />
                           </button>
                         )}
@@ -215,16 +658,238 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
 
       {chainSeed && <DealChainModal seed={chainSeed} onClose={() => setChainSeed(null)} />}
 
-      {/* Modal */}
-      {showForm && (
+      {/* ── Convert to Sales Order modal ───────────────────────────────────── */}
+      {soModal && (
         <div className="modal-overlay">
-          <div className="modal-box">
+          <div className="modal-box" style={{ maxWidth: 500 }}>
             <div className="flex items-center justify-between mb-5">
               <div>
-                <h3 className="font-bold text-slate-800 text-base">{editRow ? 'Edit Quotation' : 'New Quotation'}</h3>
-                <p className="text-xs text-slate-400 mt-0.5">{editRow ? `Editing ${editRow.qtRef}` : 'Fill in the details below'}</p>
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                  <ShoppingCart size={16} className="text-green-600" />
+                  Convert to Sales Order
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  <span className="font-mono font-bold text-blue-600">{soModal.qtRef}</span>
+                  {' · '}{soModal.customerName}{' · '}{soModal.projectName}
+                </p>
               </div>
-              <button onClick={() => setShowForm(false)}
+              <button onClick={() => setSoModal(null)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Summary strip */}
+            <div className="flex items-center gap-4 p-3 rounded-xl mb-4 text-sm"
+              style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+              <div>
+                <p className="text-xs text-slate-500">Quotation Value</p>
+                <p className="font-bold text-slate-800">SAR {Number(soModal.amountSar).toLocaleString('en-SA', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">+15% VAT</p>
+                <p className="font-bold text-slate-800">SAR {(Number(soModal.amountSar) * 1.15).toLocaleString('en-SA', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="ml-auto text-xs text-green-700 font-medium flex items-center gap-1">
+                <Check size={12} /> Will be marked Converted
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="form-label">PO Number <span className="text-red-500">*</span></label>
+                  <input type="text" placeholder="e.g. PO-2024-0042"
+                    value={soForm.poNumber}
+                    onChange={e => setSoForm(f => ({ ...f, poNumber: e.target.value }))}
+                    className="form-input" />
+                </div>
+                <div>
+                  <label className="form-label">PO Date <span className="text-red-500">*</span></label>
+                  <input type="date" value={soForm.poDate}
+                    onChange={e => setSoForm(f => ({ ...f, poDate: e.target.value }))}
+                    className="form-input" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="form-label">Fulfilment Type</label>
+                  <select value={soForm.fulfilmentType}
+                    onChange={e => setSoForm(f => ({ ...f, fulfilmentType: e.target.value }))}
+                    className="form-input">
+                    <option value="FactoryOrder">Factory Order</option>
+                    <option value="Stock">From Stock</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">Payment Split</label>
+                  <input type="text" placeholder="e.g. 50% advance + 50% delivery"
+                    value={soForm.paymentTermsSplit}
+                    onChange={e => setSoForm(f => ({ ...f, paymentTermsSplit: e.target.value }))}
+                    className="form-input" />
+                </div>
+              </div>
+              <div>
+                <label className="form-label">Remarks</label>
+                <textarea rows={2} placeholder="Optional notes…"
+                  value={soForm.remarks}
+                  onChange={e => setSoForm(f => ({ ...f, remarks: e.target.value }))}
+                  className="form-input resize-none" />
+              </div>
+            </div>
+
+            {soError && (
+              <div className="mt-3 rounded-lg px-3 py-2 text-sm flex items-center gap-2"
+                style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+                <X size={13} /> {soError}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 mt-5 pt-4" style={{ borderTop: '1px solid #f1f5f9' }}>
+              <button onClick={() => setSoModal(null)} className="btn-outline">Cancel</button>
+              <button onClick={handleConvertToSO} disabled={soLoading}
+                className="btn-primary"
+                style={{ background: '#16a34a', opacity: soLoading ? 0.7 : 1 }}>
+                <ShoppingCart size={14} />
+                {soLoading ? 'Converting…' : 'Convert to Sales Order'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Approval modal ────────────────────────────────────────────────────── */}
+      {approvalModal && (
+        <div className="modal-overlay">
+          <div className="modal-box" style={{ maxWidth: 460 }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                <ClipboardCheck size={16} className="text-blue-500" /> {approvalModal.label}
+              </h3>
+              <button onClick={() => setApprovalModal(null)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"><X size={16} /></button>
+            </div>
+            <p className="text-sm text-slate-600 mb-1">Quotation: <span className="font-mono font-bold text-blue-600">{approvalModal.row.qtRef}</span></p>
+            <p className="text-xs text-slate-400 mb-4">{approvalModal.row.customerName} · {approvalModal.row.projectName}</p>
+            <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-1">
+              {APPROVAL_STEPS.map((step, i) => {
+                const curIdx = APPROVAL_STEPS.indexOf((approvalModal.row.approvalStatus || 'Draft') as ApprovalStatus)
+                const apSt = APPROVAL_STYLES[step]
+                const active = i <= curIdx
+                return (
+                  <div key={step} className="flex items-center gap-1 shrink-0">
+                    <span className="text-xs px-2 py-0.5 rounded-full border font-medium"
+                      style={{ background: active ? apSt.bg : '#f8fafc', color: active ? apSt.text : '#94a3b8', borderColor: active ? apSt.border : '#e2e8f0' }}>
+                      {APPROVAL_STATUS_LABELS[step]}
+                    </span>
+                    {i < APPROVAL_STEPS.length - 1 && <span className="text-slate-300 text-xs">→</span>}
+                  </div>
+                )
+              })}
+            </div>
+            <div className="mb-4">
+              <label className="form-label">Comment {(approvalModal.action === 'divReject' || approvalModal.action === 'smReject') && <span className="text-red-500">*</span>}</label>
+              <textarea value={approvalComment} onChange={e => setApprovalComment(e.target.value)}
+                placeholder={approvalModal.action.includes('Reject') ? 'Required: explain what needs to be revised…' : 'Optional notes…'}
+                rows={3} className="form-input resize-none" />
+            </div>
+            {approvalError && (
+              <div className="mb-3 rounded-lg px-3 py-2 text-sm flex items-center gap-2"
+                style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+                <X size={13} /> {approvalError}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setApprovalModal(null)} className="btn-outline">Cancel</button>
+              <button onClick={handleApprovalAction} className="btn-primary"
+                style={approvalModal.action.includes('Reject') ? { background: '#dc2626' } : {}}>
+                {approvalModal.action.includes('Reject') ? <ThumbsDown size={13} /> : <Check size={13} />}
+                {approvalModal.label}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Approval history modal ──────────────────────────────────────────── */}
+      {historyRow && (() => {
+        let history: { action: string; role: string; by: string; comment: string; at: string }[] = []
+        try { history = JSON.parse(historyRow.approvalComments || '[]') } catch { /* empty */ }
+        const actionLabel: Record<string, string> = {
+          submit: 'Submitted for Review', divApprove: 'Approved by Div Mgr',
+          divReject: 'Rejected by Div Mgr', smApprove: 'Approved by Sales Mgr',
+          smReject: 'Rejected by Sales Mgr', markSubmitted: 'Marked as Submitted',
+        }
+        const actionColor: Record<string, string> = {
+          submit: '#1d4ed8', divApprove: '#15803d', divReject: '#b91c1c',
+          smApprove: '#15803d', smReject: '#b91c1c', markSubmitted: '#0369a1',
+        }
+        return (
+          <div className="modal-overlay">
+            <div className="modal-box" style={{ maxWidth: 480 }}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                  <History size={16} className="text-slate-500" /> Approval History — {historyRow.qtRef}
+                </h3>
+                <button onClick={() => setHistoryRow(null)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"><X size={16} /></button>
+              </div>
+              {history.length === 0 ? (
+                <p className="text-sm text-slate-400 py-4 text-center">No history yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {history.map((entry, i) => (
+                    <div key={i} className="flex gap-3">
+                      <div className="w-1.5 rounded-full shrink-0 mt-1" style={{ background: actionColor[entry.action] || '#94a3b8', minHeight: 40 }} />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold" style={{ color: actionColor[entry.action] || '#64748b' }}>{actionLabel[entry.action] || entry.action}</span>
+                          <span className="text-xs text-slate-400">{new Date(entry.at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">{entry.by} · {entry.role.replace(/_/g, ' ')}</p>
+                        {entry.comment && (
+                          <p className="text-xs mt-1 italic px-2 py-1 rounded"
+                            style={{ background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0' }}>
+                            &ldquo;{entry.comment}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Quotation Form Modal ─────────────────────────────────────────────── */}
+      {showForm && (
+        <div className="modal-overlay" style={{ alignItems: 'flex-start', paddingTop: 20, paddingBottom: 20, overflowY: 'auto' }}>
+          <div className="modal-box" style={{ maxWidth: 880, width: '96vw', maxHeight: '92vh', overflowY: 'auto' }}>
+
+            {/* ── Header ──────────────────────────────────────────────────────── */}
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <h3 className="font-bold text-slate-800 text-base flex items-center gap-2">
+                  {isRevision
+                    ? <><GitBranch size={16} className="text-amber-500" /> Create Revision</>
+                    : editRow
+                    ? <><FilePlus size={16} className="text-blue-500" /> Edit Quotation</>
+                    : <><FilePlus size={16} className="text-blue-500" /> New Quotation</>
+                  }
+                </h3>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-xs text-slate-400">
+                    {editRow ? `Editing ${editRow.qtRef}` : isRevision ? `Revision of ${revisionSourceRef}` : 'Fill in the details, then add line items'}
+                  </p>
+                  {isRevision && (
+                    <span className="flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full"
+                      style={{ background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>
+                      <GitBranch size={10} /> Revising {revisionSourceRef} — original is preserved
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button onClick={() => { setShowForm(false); setIsRevision(false); setRevisionSourceRef('') }}
                 className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all">
                 <X size={16} />
               </button>
@@ -237,72 +902,292 @@ export default function Tab2Quotations({ user }: { user: SessionUser }) {
               </div>
             )}
 
-            <div className="space-y-3">
-              {/* QT Ref */}
-              <div>
-                <label className="form-label">QT Reference <span className="text-red-500">*</span></label>
-                <input type="text" placeholder="e.g. QTN-00016-REV0" value={form.qtRef}
-                  onChange={e => setForm(f => ({ ...f, qtRef: e.target.value.toUpperCase() }))}
-                  disabled={!!editRow}
-                  className="form-input font-mono"
-                  style={editRow ? { background: '#f8fafc', color: '#94a3b8' } : {}} />
-                {!editRow && <p className="text-xs text-slate-400 mt-1">Enter reference exactly as issued</p>}
-              </div>
-
-              {/* Two column grid for common fields */}
-              <div className="grid grid-cols-2 gap-3">
+            {/* ── Cover Details ─────────────────────────────────────────────── */}
+            <div className="mb-4 pb-4" style={{ borderBottom: '1px solid #f1f5f9' }}>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Cover Page Details</p>
+              <div className="space-y-3">
                 <div>
-                  <label className="form-label">Date</label>
-                  <input type="date" value={form.qtnDate} onChange={e => setForm(f => ({ ...f, qtnDate: e.target.value }))} className="form-input" />
+                  <label className="form-label">QT Reference <span className="text-red-500">*</span>{isRevision && <span className="ml-1 text-amber-500">(new revision ref)</span>}</label>
+                  <input type="text" placeholder="e.g. DLITSA0526A018QN01-R1" value={form.qtRef}
+                    onChange={e => setForm(f => ({ ...f, qtRef: e.target.value.toUpperCase() }))}
+                    disabled={!!editRow && !isRevision}
+                    className="form-input font-mono"
+                    style={editRow && !isRevision ? { background: '#f8fafc', color: '#94a3b8' } : {}} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">Date</label>
+                    <input type="date" value={form.qtnDate} onChange={e => setForm(f => ({ ...f, qtnDate: e.target.value }))} className="form-input" />
+                  </div>
+                  <div>
+                    <label className="form-label">Status</label>
+                    <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className="form-input">
+                      <option>Open</option><option>Lost</option><option>Converted</option><option>OnHold</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">Customer Name</label>
+                    <input type="text" value={form.customerName} onChange={e => setForm(f => ({ ...f, customerName: e.target.value }))} className="form-input" />
+                  </div>
+                  <div>
+                    <label className="form-label">Project Name</label>
+                    <input type="text" value={form.projectName} onChange={e => setForm(f => ({ ...f, projectName: e.target.value }))} className="form-input" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">Subject</label>
+                    <input type="text" placeholder="e.g. Supply of Valves & Fittings" value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} className="form-input" />
+                  </div>
+                  <div>
+                    <label className="form-label">Customer RFQ / Inquiry Ref</label>
+                    <input type="text" placeholder="e.g. J / RFQ-0123" value={form.rfqCode} onChange={e => setForm(f => ({ ...f, rfqCode: e.target.value }))} className="form-input" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">Application</label>
+                    <input type="text" placeholder="e.g. Water Distribution" value={form.application} onChange={e => setForm(f => ({ ...f, application: e.target.value }))} className="form-input" />
+                  </div>
+                  <div>
+                    <label className="form-label">Customer PO Box</label>
+                    <input type="text" placeholder="e.g. 261192" value={form.poBox} onChange={e => setForm(f => ({ ...f, poBox: e.target.value }))} className="form-input" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="form-label">Attn (Contact Name)</label>
+                    <input type="text" value={form.clientContactName} onChange={e => setForm(f => ({ ...f, clientContactName: e.target.value }))} className="form-input" />
+                  </div>
+                  <div>
+                    <label className="form-label">Contact Details</label>
+                    <input type="text" value={form.clientContactDetails} onChange={e => setForm(f => ({ ...f, clientContactDetails: e.target.value }))} className="form-input" />
+                  </div>
+                  <div>
+                    <label className="form-label">Payment Terms</label>
+                    <input type="text" placeholder="e.g. 50% Advance & balance prior to Delivery" value={form.paymentTerms} onChange={e => setForm(f => ({ ...f, paymentTerms: e.target.value }))} className="form-input" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="form-label">Delivery (Weeks)</label>
+                    <input type="text" placeholder="e.g. 16-18" value={form.deliveryWeeks} onChange={e => setForm(f => ({ ...f, deliveryWeeks: e.target.value }))} className="form-input" />
+                  </div>
+                  <div>
+                    <label className="form-label">Validity (Days)</label>
+                    <input type="number" value={form.validityDays} onChange={e => setForm(f => ({ ...f, validityDays: e.target.value }))} className="form-input" min={1} />
+                  </div>
+                  {editRow && (
+                    <div>
+                      <label className="form-label">PO Number</label>
+                      <input type="text" value={form.poNumber} onChange={e => setForm(f => ({ ...f, poNumber: e.target.value }))} className="form-input" />
+                    </div>
+                  )}
                 </div>
                 <div>
-                  <label className="form-label">Amount (SAR)</label>
-                  <input type="number" value={form.amountSar} onChange={e => setForm(f => ({ ...f, amountSar: e.target.value }))} className="form-input" placeholder="0.00" />
-                </div>
-              </div>
-
-              <div>
-                <label className="form-label">Customer Name</label>
-                <input type="text" value={form.customerName} onChange={e => setForm(f => ({ ...f, customerName: e.target.value }))} className="form-input" />
-              </div>
-              <div>
-                <label className="form-label">Project Name</label>
-                <input type="text" value={form.projectName} onChange={e => setForm(f => ({ ...f, projectName: e.target.value }))} className="form-input" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="form-label">Status</label>
-                  <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))} className="form-input">
-                    <option>Open</option><option>Lost</option><option>Converted</option><option>OnHold</option>
-                  </select>
+                  <label className="form-label">Footnote / Notes (printed on PDF)</label>
+                  <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="form-input resize-none" />
                 </div>
                 <div>
-                  <label className="form-label">PO Number</label>
-                  <input type="text" value={form.poNumber} onChange={e => setForm(f => ({ ...f, poNumber: e.target.value }))} className="form-input" />
+                  <label className="form-label">Remarks (internal only)</label>
+                  <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} className="form-input resize-none" />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="form-label">Contact Name</label>
-                  <input type="text" value={form.clientContactName} onChange={e => setForm(f => ({ ...f, clientContactName: e.target.value }))} className="form-input" />
-                </div>
-                <div>
-                  <label className="form-label">Contact Details</label>
-                  <input type="text" value={form.clientContactDetails} onChange={e => setForm(f => ({ ...f, clientContactDetails: e.target.value }))} className="form-input" />
-                </div>
-              </div>
-
-              <div>
-                <label className="form-label">Remarks</label>
-                <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} className="form-input resize-none" />
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 mt-5 pt-4" style={{ borderTop: '1px solid #f1f5f9' }}>
-              <button onClick={() => setShowForm(false)} className="btn-outline">Cancel</button>
-              <button onClick={handleSave} className="btn-primary"><Check size={14} /> Save Quotation</button>
+            {/* ── Line Items ────────────────────────────────────────────────── */}
+            <div className="mb-4">
+              <button onClick={() => setShowItems(v => !v)}
+                className="flex items-center gap-2 text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3 hover:text-blue-600 transition-colors">
+                {showItems ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                Line Items ({lineItems.filter(li => li.itemType !== 'header').length})
+              </button>
+
+              {showItems && (
+                <>
+                  {/* Stock-check legend (internal only indicator) */}
+                  {materials.size > 0 && (
+                    <div className="flex items-center gap-3 mb-2 px-2 py-1.5 rounded-lg text-xs"
+                      style={{ background: '#f0f9ff', border: '1px solid #bae6fd', color: '#0369a1' }}>
+                      <span className="font-medium">📦 Stock Check (internal — not printed):</span>
+                      {Object.entries(STOCK_BADGE).map(([label, style]) => (
+                        <span key={label} className="flex items-center gap-1">
+                          <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: style.dot }} />
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="overflow-x-auto rounded-lg border" style={{ borderColor: '#e2e8f0' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: '#1a1a2e', color: '#fff' }}>
+                          <th style={{ padding: '6px 8px', textAlign: 'center', width: 36, fontSize: 11 }}>#</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'left', minWidth: 200, fontSize: 11 }}>Description</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'left', width: 120, fontSize: 11 }}>Reference</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'left', width: 80, fontSize: 11 }}>Make</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'center', width: 60, fontSize: 11 }}>Qty</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'center', width: 60, fontSize: 11 }}>Unit</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'right', width: 90, fontSize: 11 }}>Rate (SAR)</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'right', width: 100, fontSize: 11 }}>Amount (SAR)</th>
+                          <th style={{ padding: '6px 8px', textAlign: 'center', width: 80, fontSize: 11 }}>Delivery</th>
+                          <th style={{ width: 32 }}></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lineItems.map((item, idx) =>
+                          item.itemType === 'header' ? (
+                            /* ── Section header row — no serial number ── */
+                            <tr key={idx} style={{ background: '#e2e8f0' }}>
+                              <td style={{ padding: '3px 8px', textAlign: 'center', color: '#94a3b8', fontSize: 10 }}>§</td>
+                              <td colSpan={8} style={{ padding: '3px 8px' }}>
+                                <input
+                                  value={item.description}
+                                  onChange={e => updateItem(idx, 'description', e.target.value)}
+                                  placeholder="SECTION HEADING E.G. ELECTRICALLY OPERATED BUTTERFLY"
+                                  className="form-input"
+                                  style={{ fontSize: 11, padding: '3px 6px', fontWeight: 700, background: 'transparent', border: 'none', width: '100%', textTransform: 'uppercase' }} />
+                              </td>
+                              <td style={{ padding: '2px 4px', textAlign: 'center' }}>
+                                <button onClick={() => removeItem(idx)}
+                                  className="w-6 h-6 flex items-center justify-center rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all">
+                                  <Trash2 size={11} />
+                                </button>
+                              </td>
+                            </tr>
+                          ) : (
+                          /* ── Regular item row ── */
+                          <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                            {/* Serial number — only counts item rows, not headers */}
+                            <td style={{ padding: '4px 8px', textAlign: 'center', color: '#64748b', fontSize: 11 }}>
+                              {displayNumbers[idx]}
+                            </td>
+                            <td style={{ padding: '2px 4px', minWidth: 220 }}>
+                              <input value={item.description}
+                                onChange={e => updateItem(idx, 'description', e.target.value)}
+                                placeholder="Title e.g. BUTTERFLY VALVE"
+                                className="form-input"
+                                style={{ fontSize: 11, padding: '4px 6px', width: '100%', fontWeight: 600 }} />
+                              <textarea value={item.specifications || ''}
+                                onChange={e => updateItem(idx, 'specifications', e.target.value)}
+                                placeholder="Specifications e.g. DN100, PN16, GGG50 Body, EPDM Seat, SS316 disc"
+                                rows={2} className="form-input resize-none"
+                                style={{ fontSize: 10, padding: '3px 6px', width: '100%', marginTop: 2, color: '#475569', lineHeight: 1.4 }} />
+                            </td>
+                            <td style={{ padding: '2px 4px' }}>
+                              <input value={item.reference || ''}
+                                onChange={e => updateItem(idx, 'reference', e.target.value)}
+                                placeholder="VP4248-08"
+                                className="form-input" style={{ fontSize: 11, padding: '4px 6px', width: 112 }} />
+                              {/* Stock availability badge — internal, not in PDF */}
+                              {(() => {
+                                const mat = getStockInfo(item.reference || '')
+                                if (!mat) return null
+                                const badge = STOCK_BADGE[mat.stockAvailability] || STOCK_BADGE['Out of Stock']
+                                const avail = mat.quantity - mat.reservedQty
+                                return (
+                                  <div style={{ fontSize: 9, marginTop: 2, display: 'flex', alignItems: 'center', gap: 3, padding: '2px 5px', borderRadius: 4, background: badge.bg, color: badge.text, border: `1px solid ${badge.dot}40`, whiteSpace: 'nowrap' }}>
+                                    <span style={{ display: 'inline-block', width: 5, height: 5, borderRadius: '50%', background: badge.dot, flexShrink: 0 }} />
+                                    {mat.stockAvailability}
+                                    {avail > 0 ? ` · ${avail} avail` : ''}
+                                    {mat.reservedQty > 0 ? ` · ${mat.reservedQty} resv` : ''}
+                                  </div>
+                                )
+                              })()}
+                            </td>
+                            <td style={{ padding: '2px 4px' }}>
+                              <input value={item.make || ''}
+                                onChange={e => updateItem(idx, 'make', e.target.value)}
+                                placeholder="TECOFI"
+                                className="form-input" style={{ fontSize: 11, padding: '4px 6px', width: 74 }} />
+                            </td>
+                            <td style={{ padding: '2px 4px' }}>
+                              <input type="number" min={0} value={item.qty}
+                                onChange={e => updateItem(idx, 'qty', parseFloat(e.target.value) || 0)}
+                                className="form-input" style={{ fontSize: 11, padding: '4px 6px', width: 54, textAlign: 'right' }} />
+                            </td>
+                            <td style={{ padding: '2px 4px' }}>
+                              <input value={item.unit || ''}
+                                onChange={e => updateItem(idx, 'unit', e.target.value)}
+                                placeholder="NOS"
+                                className="form-input" style={{ fontSize: 11, padding: '4px 6px', width: 54 }} />
+                            </td>
+                            <td style={{ padding: '2px 4px' }}>
+                              <input type="number" min={0} value={item.rate}
+                                onChange={e => updateItem(idx, 'rate', parseFloat(e.target.value) || 0)}
+                                className="form-input" style={{ fontSize: 11, padding: '4px 6px', width: 84, textAlign: 'right' }} />
+                            </td>
+                            <td style={{ padding: '2px 4px' }}>
+                              <input type="number" min={0} value={item.amount}
+                                onChange={e => updateItem(idx, 'amount', parseFloat(e.target.value) || 0)}
+                                className="form-input" style={{ fontSize: 11, padding: '4px 6px', width: 94, textAlign: 'right', background: '#f0fdf4' }} />
+                            </td>
+                            <td style={{ padding: '2px 4px' }}>
+                              <input value={item.delivery || ''}
+                                onChange={e => updateItem(idx, 'delivery', e.target.value)}
+                                placeholder="4-6 Weeks"
+                                className="form-input" style={{ fontSize: 11, padding: '4px 6px', width: 74 }} />
+                            </td>
+                            <td style={{ padding: '2px 4px', textAlign: 'center' }}>
+                              <button onClick={() => removeItem(idx)}
+                                className="w-6 h-6 flex items-center justify-center rounded text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all">
+                                <Trash2 size={11} />
+                              </button>
+                            </td>
+                          </tr>
+                          )
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* add row + totals */}
+                  <div className="flex items-start justify-between mt-2">
+                    <div className="flex items-center gap-2">
+                      <button onClick={addItem}
+                        className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium px-3 py-1.5 rounded-lg hover:bg-blue-50 border border-blue-200 transition-all">
+                        <Plus size={12} /> Add Row
+                      </button>
+                      <button onClick={addHeader}
+                        className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-slate-800 font-medium px-3 py-1.5 rounded-lg hover:bg-slate-50 border border-slate-200 transition-all">
+                        <Plus size={12} /> Add Section Header
+                      </button>
+                    </div>
+                    {lineItems.length > 0 && (
+                      <div className="text-right space-y-1" style={{ minWidth: 240 }}>
+                        <div className="flex items-center justify-between gap-8 text-xs text-slate-500">
+                          <span>Subtotal (Ex-VAT)</span>
+                          <span className="font-semibold text-slate-700">SAR {itemsSubtotal.toLocaleString('en-SA', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-8 text-xs text-slate-500">
+                          <span>Discount</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-slate-400">SAR</span>
+                            <input type="number" min={0} value={form.discount}
+                              onChange={e => setForm(f => ({ ...f, discount: e.target.value }))}
+                              className="form-input" style={{ fontSize: 11, padding: '2px 6px', width: 90, textAlign: 'right' }} />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between gap-8 text-xs font-bold border-t pt-1" style={{ borderColor: '#e2e8f0' }}>
+                          <span style={{ color: '#1a1a2e' }}>Grand Total (Net)</span>
+                          <span style={{ color: '#1d4ed8' }}>SAR {netTotal.toLocaleString('en-SA', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* ── Footer ──────────────────────────────────────────────────────── */}
+            <div className="flex justify-end gap-2 pt-4" style={{ borderTop: '1px solid #f1f5f9' }}>
+              <button onClick={() => { setShowForm(false); setIsRevision(false); setRevisionSourceRef('') }} className="btn-outline">Cancel</button>
+              <button onClick={handleSave} className="btn-primary">
+                {isRevision ? <><GitBranch size={14} /> Save Revision</> : <><Check size={14} /> Save Quotation</>}
+              </button>
             </div>
           </div>
         </div>

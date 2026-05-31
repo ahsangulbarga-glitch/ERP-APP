@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { SessionUser } from '@/types'
+import { canExportReport } from '@/lib/rbac'
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, BarChart, ReferenceLine,
@@ -10,7 +11,7 @@ import {
 import {
   TrendingUp, FileText, ShoppingBag, AlertTriangle, FileWarning,
   Clock, Bell, CalendarClock, CheckCircle2, RefreshCw, Zap, Trophy, Users,
-  Target, BarChart2,
+  Target, BarChart2, FileDown, Presentation,
 } from 'lucide-react'
 
 /* ── Types ─────────────────────────────────────────────────────────── */
@@ -23,9 +24,9 @@ interface FunnelStage  { name: string; value: number; fill: string; pct: number 
 interface RFQStage     { name: string; count: number; fill: string; dropPct: number }
 interface WinLossItem  { customer: string; won: number; lost: number; winRate: number }
 
-type RawQuote    = { qtnDate: string; amountSar: string|number; status: string; customerName: string; qtRef?: string }
-type RawPO       = { poDate: string; poAmountExVat: string|number; totalValueIncVat: string|number }
-type RawPayment  = { poNumber: string; customerName: string; poValue: string|number; collectionPct: string|number; milestones?: { id: string; phaseName: string; amountSar: string|number; dueDate: string; status: string }[] }
+type RawQuote    = { id?: string; qtnDate: string; amountSar: string|number; status: string; customerName: string; qtRef?: string; projectName?: string; subject?: string; application?: string; clientContactName?: string; rfqCode?: string; validityDays?: number; remarks?: string; kaeAssigned?: { name: string } | null }
+type RawPO       = { id?: string; poDate: string; poAmountExVat: string|number; totalValueIncVat: string|number; poNumber?: string; customerName?: string; projectName?: string; kaeName?: string; qtRef?: string; paymentTermsSplit?: string; paymentCollectionPct?: string|number; paymentStatus?: string; remarks?: string }
+type RawPayment  = { poNumber: string; customerName: string; poValue: string|number; collectionPct: string|number; milestones?: { id: string; phaseName: string; amountSar: string|number; dueDate: string; status: string; paidAt?: string }[] }
 type RawDocument = { status: string; documentName: string; expiryDate?: string; remainingDaysForExpiry?: number }
 type RawCustomer = { customerName: string; totalPoValue: string|number; completionPct: string|number; totalRfq?: number; totalConverted?: number }
 
@@ -106,7 +107,10 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const [allUnpaidMilestones, setAllUnpaidMilestones] = useState<UpcomingMilestone[]>([])
   const [rawQuotes,   setRawQuotes]   = useState<{ customer: string; amountSar: number; status: string }[]>([])
   const [rawPayments, setRawPayments] = useState<{ customer: string; billed: number; collected: number }[]>([])
+  const [recentPayments, setRecentPayments] = useState<{ customer: string; phaseName: string; amount: number; paidAt: string }[]>([])
   const [expiringDocList, setExpiringDocList] = useState<{ name: string; status: string; daysLeft: number }[]>([])
+  const [openPipelineQuotes, setOpenPipelineQuotes] = useState<RawQuote[]>([])
+  const [recentPOs, setRecentPOs] = useState<{ poNumber: string; customerName: string; projectName: string; kaeName: string; qtRef: string; totalValueIncVat: number; poAmountExVat: number; paymentStatus: string; paymentTermsSplit: string; paymentCollectionPct: number; poDate: string; remarks: string }[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => { loadStats() }, [])   // eslint-disable-line react-hooks/exhaustive-deps
@@ -254,9 +258,50 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
       const avgQuota = last3.length > 0 ? last3.reduce((s, v) => s + v, 0) / last3.length : 0
       setMonthlyQuota(Math.round(avgQuota * 1.1)) // 10% growth target
 
+      /* ── Recent POs (API returns sorted by poDate desc) ── */
+      setRecentPOs(
+        pos.slice(0, 8).map(p => ({
+          poNumber:            p.poNumber              || '—',
+          customerName:        p.customerName          || 'Unknown',
+          projectName:         p.projectName           || '—',
+          kaeName:             p.kaeName               || '—',
+          qtRef:               p.qtRef                 || '—',
+          totalValueIncVat:    Number(p.totalValueIncVat),
+          poAmountExVat:       Number(p.poAmountExVat),
+          paymentStatus:       p.paymentStatus         || 'Pending',
+          paymentTermsSplit:   p.paymentTermsSplit      || '—',
+          paymentCollectionPct: Number(p.paymentCollectionPct || 0),
+          poDate:              p.poDate,
+          remarks:             p.remarks               || '',
+        }))
+      )
+
+      /* ── Open pipeline quotations ── */
+      setOpenPipelineQuotes(
+        quotes
+          .filter(q => q.status === 'Open' || q.status === 'OnHold')
+          .sort((a, b) => new Date(b.qtnDate).getTime() - new Date(a.qtnDate).getTime())
+          .slice(0, 8)
+      )
+
       /* ── Raw rows for render-time tooltip derivations ── */
       setRawQuotes(quotes.map(q => ({ customer: q.customerName || 'Unknown', amountSar: Number(q.amountSar), status: q.status })))
       setRawPayments(payments.map(p => ({ customer: p.customerName || 'Unknown', billed: Number(p.poValue), collected: Number(p.poValue) * (Number(p.collectionPct) / 100) })))
+
+      /* ── Latest payments received (paid milestones) ── */
+      const paidMilestones = payments
+        .flatMap(p => (p.milestones ?? [])
+          .filter(m => m.status === 'Paid')
+          .map(m => ({
+            customer:  p.customerName || 'Unknown',
+            phaseName: m.phaseName,
+            amount:    Number(m.amountSar),
+            paidAt:    m.paidAt || m.dueDate,
+          }))
+        )
+        .sort((a, b) => new Date(b.paidAt).getTime() - new Date(a.paidAt).getTime())
+        .slice(0, 8)
+      setRecentPayments(paidMilestones)
       setExpiringDocList(
         docs
           .filter(d => d.status === 'ExpiringSoon' || d.status === 'Expired')
@@ -366,11 +411,49 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
               </p>
             </div>
           </div>
-          <button onClick={loadStats}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
-            style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
-            <RefreshCw size={11} /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Export PDF — management roles only */}
+            {canExportReport(user.role, 'dashboard') && (
+              <a href="/api/dashboard/pdf" download
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
+                style={{ background: 'rgba(220,38,38,0.15)', color: '#f87171', border: '1px solid rgba(220,38,38,0.3)' }}
+                title="Export Dashboard PDF">
+                <FileDown size={11} /> PDF
+              </a>
+            )}
+            {/* Export PPTX — management roles only */}
+            {canExportReport(user.role, 'dashboard') && (
+              <a href="/api/dashboard/pptx" download
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
+                style={{ background: 'rgba(234,88,12,0.15)', color: '#fb923c', border: '1px solid rgba(234,88,12,0.3)' }}
+                title="Export Dashboard PowerPoint">
+                <Presentation size={11} /> PPTX
+              </a>
+            )}
+            {/* My Quotations PDF — KAE & Inside Sales Engineers */}
+            {canExportReport(user.role, 'ownQuotations') && (
+              <a href="/api/quotations/my-export" download
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
+                style={{ background: 'rgba(37,99,235,0.15)', color: '#60a5fa', border: '1px solid rgba(37,99,235,0.3)' }}
+                title="Export My Quotations PDF">
+                <FileDown size={11} /> My RFQs
+              </a>
+            )}
+            {/* Financial Report PDF — Accountant */}
+            {canExportReport(user.role, 'financial') && (
+              <a href="/api/financial" download
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
+                style={{ background: 'rgba(5,150,105,0.15)', color: '#34d399', border: '1px solid rgba(5,150,105,0.3)' }}
+                title="Export Financial Report PDF">
+                <FileDown size={11} /> Financial
+              </a>
+            )}
+            <button onClick={loadStats}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
+              style={{ background: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
+              <RefreshCw size={11} /> Refresh
+            </button>
+          </div>
         </div>
 
         {/* Hero KPI grid */}
@@ -408,55 +491,46 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
               </>
             ) : id === 'winrate' ? (
               <>
-                <p className="text-xs font-semibold mb-2" style={{ color: '#6ee7b7' }}>Win Rate by Account</p>
-                {winLoss.length === 0
-                  ? <p className="text-xs" style={{ color: '#94a3b8' }}>No data available</p>
-                  : <table className="w-full text-xs border-collapse">
-                      <thead><tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                        <th className="text-left pb-1.5 font-medium">Account</th>
-                        <th className="text-right pb-1.5 font-medium">Won</th>
-                        <th className="text-right pb-1.5 font-medium">Lost</th>
-                        <th className="text-right pb-1.5 font-medium">Rate</th>
-                      </tr></thead>
-                      <tbody>
-                        {winLoss.slice(0, 6).map(c => (
-                          <tr key={c.customer} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                            <td className="py-1 pr-2 truncate max-w-[90px]" style={{ color: '#e2e8f0' }}>{c.customer}</td>
-                            <td className="py-1 text-right" style={{ color: '#4ade80' }}>{c.won}</td>
-                            <td className="py-1 text-right" style={{ color: '#f87171' }}>{c.lost}</td>
-                            <td className="py-1 text-right font-bold" style={{ color: c.winRate >= 50 ? '#4ade80' : '#fbbf24' }}>{c.winRate.toFixed(0)}%</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#6ee7b7' }}>Latest POs Received</p>
+                {recentPOs.length === 0
+                  ? <p className="text-xs" style={{ color: '#94a3b8' }}>No POs yet</p>
+                  : <div className="space-y-1.5">
+                      {recentPOs.map((p, i) => (
+                        <div key={i} className="flex items-center justify-between gap-3 py-1"
+                          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-mono text-xs font-semibold" style={{ color: '#a78bfa' }}>{p.poNumber}</p>
+                            <p className="truncate text-xs" style={{ color: '#94a3b8' }}>{p.customerName}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-semibold text-xs whitespace-nowrap" style={{ color: '#4ade80' }}>SAR {fmt(p.totalValueIncVat)}</p>
+                            <p className="text-xs whitespace-nowrap" style={{ color: '#64748b' }}>{new Date(p.poDate).toLocaleDateString('en-GB')}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                 }
               </>
             ) : id === 'billed' ? (
               <>
-                <p className="text-xs font-semibold mb-2" style={{ color: '#c4b5fd' }}>Collection by Account</p>
-                {arByCustomer.length === 0
-                  ? <p className="text-xs" style={{ color: '#94a3b8' }}>No data available</p>
-                  : <table className="w-full text-xs border-collapse">
-                      <thead><tr style={{ color: '#64748b', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                        <th className="text-left pb-1.5 font-medium">Account</th>
-                        <th className="text-right pb-1.5 font-medium">Billed</th>
-                        <th className="text-right pb-1.5 font-medium">Collected</th>
-                        <th className="text-right pb-1.5 font-medium">Rate</th>
-                      </tr></thead>
-                      <tbody>
-                        {arByCustomer.map(c => {
-                          const rate = c.billed > 0 ? (c.collected / c.billed * 100) : 0
-                          return (
-                            <tr key={c.customer} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                              <td className="py-1 pr-2 truncate max-w-[90px]" style={{ color: '#e2e8f0' }}>{c.customer}</td>
-                              <td className="py-1 text-right" style={{ color: '#94a3b8' }}>{fmt(c.billed)}</td>
-                              <td className="py-1 text-right" style={{ color: '#a78bfa' }}>{fmt(c.collected)}</td>
-                              <td className="py-1 text-right font-bold" style={{ color: rate >= 80 ? '#4ade80' : rate >= 50 ? '#fbbf24' : '#f87171' }}>{rate.toFixed(0)}%</td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
+                <p className="text-xs font-semibold mb-2" style={{ color: '#c4b5fd' }}>Latest Payments Received</p>
+                {recentPayments.length === 0
+                  ? <p className="text-xs" style={{ color: '#94a3b8' }}>No payments received yet</p>
+                  : <div className="space-y-1.5">
+                      {recentPayments.map((p, i) => (
+                        <div key={i} className="flex items-center justify-between gap-3 py-1"
+                          style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-xs" style={{ color: '#e2e8f0' }}>{p.customer}</p>
+                            <p className="truncate text-xs" style={{ color: '#64748b' }}>{p.phaseName}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-semibold text-xs whitespace-nowrap" style={{ color: '#a78bfa' }}>SAR {fmt(p.amount)}</p>
+                            <p className="text-xs whitespace-nowrap" style={{ color: '#64748b' }}>{new Date(p.paidAt).toLocaleDateString('en-GB')}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                 }
               </>
             ) : id === 'ar' ? (
@@ -1059,6 +1133,173 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
         </div>
       </Panel>
 
+      {/* ━━━ NEW POs RECEIVED ━━━ */}
+      <Panel>
+        <PanelHead
+          icon={<ShoppingBag size={14} className="text-emerald-500" />}
+          title="New POs Received"
+          sub={`${recentPOs.length} latest purchase order${recentPOs.length !== 1 ? 's' : ''}`}
+        />
+        {recentPOs.length === 0 ? (
+          <div className="flex items-center justify-center h-24 text-slate-400 text-sm">No POs recorded yet</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {recentPOs.map((po, i) => {
+              const dateStr = po.poDate
+                ? new Date(po.poDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+                : '—'
+              const statusColor = po.paymentStatus === 'Paid'
+                ? { bg: '#f0fdf4', text: '#15803d', border: '#bbf7d0' }
+                : po.paymentStatus === 'Overdue'
+                ? { bg: '#fef2f2', text: '#b91c1c', border: '#fecaca' }
+                : { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' }
+              return (
+                <div key={po.poNumber + i} className="px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                  <div className="flex items-start justify-between gap-4">
+                    {/* Left */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold"
+                        style={{ background: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0' }}>
+                        {String(i + 1).padStart(2, '0')}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm text-slate-800">{po.poNumber}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                            style={{ background: statusColor.bg, color: statusColor.text, border: `1px solid ${statusColor.border}` }}>
+                            {po.paymentStatus}
+                          </span>
+                          {po.qtRef && po.qtRef !== '—' && (
+                            <span className="text-xs text-slate-400">QT: {po.qtRef}</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-slate-700 mt-0.5 truncate">{po.projectName}</p>
+                      </div>
+                    </div>
+                    {/* Right: value */}
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-base" style={{ color: '#15803d' }}>
+                        SAR {po.totalValueIncVat.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">inc-VAT · Ex: SAR {po.poAmountExVat.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                    </div>
+                  </div>
+                  {/* Detail row */}
+                  <div className="flex items-center gap-4 mt-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <ShoppingBag size={11} className="text-slate-400 shrink-0" />
+                      <span className="font-medium">{po.customerName}</span>
+                    </div>
+                    {po.kaeName && po.kaeName !== '—' && (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <Target size={11} className="text-slate-400 shrink-0" />
+                        <span>KAE: {po.kaeName}</span>
+                      </div>
+                    )}
+                    {po.paymentTermsSplit && po.paymentTermsSplit !== '—' && (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <Bell size={11} className="text-slate-400 shrink-0" />
+                        <span className="truncate max-w-[180px]">{po.paymentTermsSplit}</span>
+                      </div>
+                    )}
+                    {po.paymentCollectionPct > 0 && (
+                      <div className="flex items-center gap-1.5 text-xs"
+                        style={{ color: po.paymentCollectionPct >= 80 ? '#15803d' : po.paymentCollectionPct >= 50 ? '#b45309' : '#b91c1c' }}>
+                        <CheckCircle2 size={11} className="shrink-0" />
+                        <span>{po.paymentCollectionPct.toFixed(0)}% collected</span>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400 ml-auto">
+                      <CalendarClock size={11} className="shrink-0" />
+                      <span>{dateStr}</span>
+                    </div>
+                  </div>
+                  {po.remarks && (
+                    <p className="text-xs text-slate-400 mt-1.5 italic truncate">{po.remarks}</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Panel>
+
+      {/* ━━━ OPEN PIPELINE — LATEST QUOTATIONS ━━━ */}
+      <Panel>
+        <PanelHead
+          icon={<FileText size={14} className="text-blue-500" />}
+          title="Open Pipeline"
+          sub={`${openPipelineQuotes.length} active quotation${openPipelineQuotes.length !== 1 ? 's' : ''} in pipeline`}
+        />
+        {openPipelineQuotes.length === 0 ? (
+          <div className="flex items-center justify-center h-24 text-slate-400 text-sm">No open quotations</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {openPipelineQuotes.map((q, i) => {
+              const amt      = Number(q.amountSar)
+              const dateStr  = q.qtnDate ? new Date(q.qtnDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'
+              const isOnHold = q.status === 'OnHold'
+              return (
+                <div key={q.id || i} className="px-5 py-3.5 hover:bg-slate-50 transition-colors">
+                  <div className="flex items-start justify-between gap-4">
+                    {/* Left: ref + status + project */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold"
+                        style={{ background: isOnHold ? '#fffbeb' : '#eff6ff', color: isOnHold ? '#b45309' : '#1d4ed8', border: `1px solid ${isOnHold ? '#fde68a' : '#bfdbfe'}` }}>
+                        {String(i + 1).padStart(2, '0')}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-sm text-slate-800">{q.qtRef || '—'}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                            style={{ background: isOnHold ? '#fffbeb' : '#eff6ff', color: isOnHold ? '#b45309' : '#1d4ed8' }}>
+                            {isOnHold ? 'On Hold' : 'Open'}
+                          </span>
+                          {q.rfqCode && <span className="text-xs text-slate-400">RFQ: {q.rfqCode}</span>}
+                        </div>
+                        <p className="text-sm text-slate-700 mt-0.5 truncate">{q.projectName || q.subject || '—'}</p>
+                        {q.application && <p className="text-xs text-slate-400 truncate">{q.application}</p>}
+                      </div>
+                    </div>
+                    {/* Right: value + date */}
+                    <div className="text-right shrink-0">
+                      <p className="font-bold text-base" style={{ color: '#1A5096' }}>
+                        SAR {amt.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">{dateStr}</p>
+                    </div>
+                  </div>
+                  {/* Detail row: contractor + contact + KAE + validity */}
+                  <div className="flex items-center gap-4 mt-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <ShoppingBag size={11} className="text-slate-400 shrink-0" />
+                      <span className="font-medium">{q.customerName || '—'}</span>
+                    </div>
+                    {q.clientContactName && (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <Users size={11} className="text-slate-400 shrink-0" />
+                        <span>{q.clientContactName}</span>
+                      </div>
+                    )}
+                    {q.kaeAssigned?.name && (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <Target size={11} className="text-slate-400 shrink-0" />
+                        <span>KAE: {q.kaeAssigned.name}</span>
+                      </div>
+                    )}
+                    {q.remarks && (
+                      <div className="flex items-center gap-1.5 text-xs text-slate-400 italic">
+                        <FileText size={11} className="shrink-0" />
+                        <span className="truncate max-w-xs">{q.remarks}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Panel>
 
     </div>
   )

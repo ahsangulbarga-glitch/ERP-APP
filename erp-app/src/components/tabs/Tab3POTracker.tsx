@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { SessionUser, POTracker } from '@/types'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { SessionUser, POTracker, Quotation } from '@/types'
 import { canWrite } from '@/lib/rbac'
 import KPISummaryPanel from '@/components/shared/KPISummaryPanel'
 import { Plus, Download, ShoppingCart, Pencil, X, Check, BarChart2, Percent, Trash2, CalendarDays, Link2 } from 'lucide-react'
@@ -14,6 +14,7 @@ const STATUS_STYLES: Record<string, { bg: string; text: string; border: string }
   PartiallyPaid: { bg: '#eff6ff', text: '#1d4ed8', border: '#bfdbfe' },
 }
 
+
 export default function Tab3POTracker({ user }: { user: SessionUser }) {
   const [rows, setRows] = useState<POTracker[]>([])
   const [loading, setLoading] = useState(true)
@@ -21,7 +22,7 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
   const [showForm, setShowForm] = useState(false)
   const [editRow, setEditRow] = useState<POTracker | null>(null)
   const [chainSeed, setChainSeed] = useState<{ qtRef?: string; poNumber?: string } | null>(null)
-  const [form, setForm] = useState({ customerName: '', projectName: '', kaeName: '', qtRef: '', poNumber: '', poDate: '', poAmountExVat: '', paymentTermsSplit: '', remarks: '' })
+  const [form, setForm] = useState({ customerName: '', projectName: '', kaeName: '', qtRef: '', poNumber: '', poDate: '', poAmountExVat: '', paymentTermsSplit: '', fulfilmentType: 'FactoryOrder', remarks: '' })
 
   type MilestoneRow = { id?: string; phaseName: string; amountSar: string; dueDate: string; status: string; paidAt?: string; _deleted?: boolean }
   const [linkedPaymentId, setLinkedPaymentId]   = useState<string | null>(null)
@@ -104,9 +105,10 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
 
   const openEdit = async (row: POTracker) => {
     setEditRow(row)
-    setForm({ customerName: row.customerName, projectName: row.projectName, kaeName: row.kaeName || '', qtRef: row.qtRef || '', poNumber: row.poNumber, poDate: row.poDate.split('T')[0], poAmountExVat: String(row.poAmountExVat), paymentTermsSplit: row.paymentTermsSplit || '', remarks: row.remarks || '' })
+    setForm({ customerName: row.customerName, projectName: row.projectName, kaeName: row.kaeName || '', qtRef: row.qtRef || '', poNumber: row.poNumber, poDate: row.poDate.split('T')[0], poAmountExVat: String(row.poAmountExVat), paymentTermsSplit: row.paymentTermsSplit || '', fulfilmentType: row.fulfilmentType || 'FactoryOrder', remarks: row.remarks || '' })
     setEditMilestones([])
     setLinkedPaymentId(null)
+    setQtRefStatus('idle')
     setShowForm(true)
 
     // Fetch linked payment milestones
@@ -129,8 +131,61 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
 
   const openNew = () => {
     setEditRow(null); setLinkedPaymentId(null); setEditMilestones([])
-    setForm({ customerName: '', projectName: '', kaeName: '', qtRef: '', poNumber: '', poDate: '', poAmountExVat: '', paymentTermsSplit: '', remarks: '' })
+    setForm({ customerName: '', projectName: '', kaeName: '', qtRef: '', poNumber: '', poDate: '', poAmountExVat: '', paymentTermsSplit: '', fulfilmentType: 'FactoryOrder', remarks: '' })
+    setQtRefStatus('idle')
     setShowForm(true)
+  }
+
+  // ── QT Ref auto-fill ──
+  const [qtRefStatus, setQtRefStatus] = useState<'idle' | 'loading' | 'found' | 'notfound'>('idle')
+  const [qtRefDropdown, setQtRefDropdown] = useState<Quotation[]>([])
+  const [showQtDropdown, setShowQtDropdown] = useState(false)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const applyQuotation = (q: Quotation) => {
+    setForm(f => ({
+      ...f,
+      qtRef:         q.qtRef,
+      customerName:  q.customerName        || f.customerName,
+      projectName:   q.projectName         || f.projectName,
+      kaeName:       q.kaeAssigned?.name   || f.kaeName,
+      poAmountExVat: q.amountSar ? String(Math.round(Number(q.amountSar) / 1.15)) : f.poAmountExVat,
+      poNumber:      q.poNumber            || f.poNumber,
+      remarks:       q.remarks             || f.remarks,
+    }))
+    setQtRefStatus('found')
+    setQtRefDropdown([])
+    setShowQtDropdown(false)
+  }
+
+  const handleQtRefChange = (value: string) => {
+    setForm(f => ({ ...f, qtRef: value }))
+    setQtRefStatus('idle')
+    setQtRefDropdown([])
+    setShowQtDropdown(false)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (!value.trim()) return
+    debounceRef.current = setTimeout(async () => {
+      setQtRefStatus('loading')
+      try {
+        const res   = await fetch(`/api/quotations?qtRef=${encodeURIComponent(value.trim())}`)
+        const data  = await res.json()
+        const quotes: Quotation[] = Array.isArray(data) ? data : []
+        if (quotes.length === 0) {
+          setQtRefStatus('notfound')
+          return
+        }
+        // Exact match → apply immediately without showing dropdown
+        const exact = quotes.find(q => q.qtRef.toLowerCase() === value.trim().toLowerCase())
+        if (exact) {
+          applyQuotation(exact)
+        } else {
+          setQtRefDropdown(quotes)
+          setShowQtDropdown(true)
+          setQtRefStatus('idle')
+        }
+      } catch { setQtRefStatus('notfound') }
+    }, 400)
   }
 
   const fields = [
@@ -163,7 +218,7 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
         )}
       </div>
 
-      <div className="section-header">
+<div className="section-header">
         <div className="flex gap-2 flex-wrap">
           {canWrite(user.role, 'poTracker') && (
             <button onClick={openNew} className="btn-primary">
@@ -186,7 +241,7 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
               <tr>
                 <th>PO Number</th><th>Customer</th><th>Project</th><th>KAE</th><th>Date</th>
                 <th className="text-right">Ex-VAT</th><th className="text-right">VAT 15%</th><th className="text-right">Inc-VAT</th>
-                <th>Collection</th><th>Status</th><th>Remarks</th><th></th>
+                <th>Collection</th><th>Status</th><th>Fulfilment</th><th>Remarks</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -214,6 +269,14 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
                     <td style={{ minWidth: 110 }}>
                       <span className="text-xs font-semibold px-2.5 py-1 rounded-full border inline-block"
                         style={{ background: s.bg, color: s.text, borderColor: s.border }}>{row.paymentStatus}</span>
+                    </td>
+                    <td style={{ minWidth: 100 }}>
+                      <span className="text-xs font-medium px-2 py-0.5 rounded-full border inline-block"
+                        style={row.fulfilmentType === 'Stock'
+                          ? { background: '#f0fdf4', color: '#15803d', borderColor: '#bbf7d0' }
+                          : { background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe' }}>
+                        {row.fulfilmentType === 'Stock' ? '📦 Stock' : '🏭 Factory'}
+                      </span>
                     </td>
                     <td className="text-slate-400 text-xs" style={{ maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.remarks || '—'}</td>
                     <td style={{ minWidth: 64 }}>
@@ -260,12 +323,72 @@ export default function Tab3POTracker({ user }: { user: SessionUser }) {
                 <div className="grid grid-cols-2 gap-3">
                   {fields.map(({ label, key, type = 'text' }) => (
                     <div key={key} className={key === 'paymentTermsSplit' ? 'col-span-2' : ''}>
-                      <label className="form-label">{label}</label>
-                      <input type={type} value={(form as Record<string, string>)[key]}
-                        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                        className="form-input" />
+                      <label className="form-label flex items-center gap-1.5">
+                        {label}
+                        {key === 'qtRef' && qtRefStatus === 'loading' && (
+                          <span className="text-blue-400 font-normal normal-case text-xs animate-pulse">Looking up…</span>
+                        )}
+                        {key === 'qtRef' && qtRefStatus === 'found' && (
+                          <span className="text-green-600 font-semibold normal-case text-xs flex items-center gap-0.5">
+                            <Check size={10} /> Quotation found
+                          </span>
+                        )}
+                        {key === 'qtRef' && qtRefStatus === 'notfound' && (
+                          <span className="text-red-400 font-normal normal-case text-xs">No match</span>
+                        )}
+                      </label>
+                      {key === 'qtRef' ? (
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={form.qtRef}
+                            onChange={e => handleQtRefChange(e.target.value)}
+                            onBlur={() => setTimeout(() => setShowQtDropdown(false), 150)}
+                            className={`form-input w-full ${qtRefStatus === 'found' ? 'border-green-300 bg-green-50' : qtRefStatus === 'notfound' ? 'border-red-300' : ''}`}
+                            placeholder="Type to search quotations…"
+                            autoComplete="off"
+                          />
+                          {showQtDropdown && qtRefDropdown.length > 0 && (
+                            <div className="absolute z-50 left-0 right-0 top-full mt-1 rounded-lg shadow-lg overflow-hidden"
+                              style={{ background: '#fff', border: '1px solid #e2e8f0', maxHeight: 220, overflowY: 'auto' }}>
+                              {qtRefDropdown.map(q => (
+                                <button
+                                  key={q.id}
+                                  type="button"
+                                  onMouseDown={() => applyQuotation(q)}
+                                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors border-b last:border-b-0"
+                                  style={{ borderColor: '#f1f5f9' }}>
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-mono text-xs font-bold" style={{ color: '#7c3aed' }}>{q.qtRef}</span>
+                                    <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
+                                      style={{ background: q.status === 'Converted' ? '#f0fdf4' : q.status === 'Lost' ? '#fef2f2' : '#eff6ff', color: q.status === 'Converted' ? '#15803d' : q.status === 'Lost' ? '#b91c1c' : '#1d4ed8' }}>
+                                      {q.status}
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-slate-500 truncate mt-0.5">{q.customerName} — {q.projectName}</div>
+                                  <div className="text-xs text-slate-400 mt-0.5">SAR {Number(q.amountSar).toLocaleString('en-SA', { maximumFractionDigits: 0 })}</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <input
+                          type={type}
+                          value={(form as Record<string, string>)[key]}
+                          onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                          className="form-input"
+                        />
+                      )}
                     </div>
                   ))}
+                  <div>
+                    <label className="form-label">Fulfilment Type</label>
+                    <select value={form.fulfilmentType} onChange={e => setForm(f => ({ ...f, fulfilmentType: e.target.value }))} className="form-input">
+                      <option value="FactoryOrder">Factory Order</option>
+                      <option value="Stock">From Stock</option>
+                    </select>
+                  </div>
                   <div className="col-span-2">
                     <label className="form-label">Remarks</label>
                     <textarea value={form.remarks} onChange={e => setForm(f => ({ ...f, remarks: e.target.value }))} rows={2} className="form-input resize-none" />

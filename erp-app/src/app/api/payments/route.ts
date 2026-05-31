@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+﻿import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { canRead, canWrite } from '@/lib/rbac'
 import { writeAuditLog } from '@/lib/audit'
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
 
   const payment = await prisma.payment.create({
     data: {
-      poNumber, customerName, kaeNameId, poValue, remarks, createdBy: session.user.id,
+      poNumber, customerName, kaeNameId: kaeNameId || undefined, poValue: parseFloat(poValue), remarks, createdBy: session.user.id,
       milestones: milestones ? { create: milestones } : undefined,
     },
     include: { milestones: true, kaeName: { select: { id: true, name: true } } },
@@ -66,7 +66,7 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json()
   const { id, milestoneId, milestoneStatus, milestoneUpdates, newMilestones, deleteMilestoneIds, ...paymentUpdates } = body
 
-  // ── Quick status toggle (Mark Paid button) ──
+  // â”€â”€ Quick status toggle (Mark Paid button) â”€â”€
   if (milestoneId && milestoneStatus) {
     await prisma.paymentMilestone.update({
       where: { id: milestoneId },
@@ -77,12 +77,19 @@ export async function PATCH(req: NextRequest) {
       const paidAmount = payment.milestones.filter(m => m.status === 'Paid').reduce((sum, m) => sum + Number(m.amountSar), 0)
       const collectionPct = Number(payment.poValue) > 0 ? (paidAmount / Number(payment.poValue)) * 100 : 0
       await prisma.payment.update({ where: { id }, data: { collectionPct } })
+
+      // Sync collection % and status back to the PO tracker record
+      const poStatus = collectionPct >= 100 ? 'Paid' : collectionPct > 0 ? 'PartiallyPaid' : 'Pending'
+      await prisma.pOTracker.updateMany({
+        where: { poNumber: payment.poNumber },
+        data: { paymentCollectionPct: collectionPct, paymentStatus: poStatus },
+      })
     }
     const refreshed = await prisma.payment.findUnique({ where: { id }, include: { milestones: true, kaeName: { select: { id: true, name: true } } } })
     return NextResponse.json(refreshed)
   }
 
-  // ── Full edit (from edit modal) ──
+  // â”€â”€ Full edit (from edit modal) â”€â”€
 
   // 1. Delete removed milestones
   if (Array.isArray(deleteMilestoneIds) && deleteMilestoneIds.length > 0) {
@@ -153,7 +160,7 @@ export async function PUT() {
 
   for (const milestone of overdueMilestones) {
     await prisma.paymentMilestone.update({ where: { id: milestone.id }, data: { status: 'Overdue' } })
-    const salesManager = await prisma.user.findFirst({ where: { role: 'P4_SALES_MANAGER' } })
+    const salesManager = await prisma.user.findFirst({ where: { role: 'P5_SALES_MANAGER' } })
     if (salesManager) {
       notifyOverdueMilestone(
         '+966500000000',

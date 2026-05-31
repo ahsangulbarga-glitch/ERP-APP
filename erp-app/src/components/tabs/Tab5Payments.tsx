@@ -180,7 +180,7 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
                     boxShadow: hasOverdue ? '0 0 0 1px #fecaca, 0 2px 8px rgba(239,68,68,0.08)' : '0 1px 4px rgba(0,0,0,0.05)',
                   }}>
                   {/* Header row */}
-                  <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+                  <div className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors cursor-pointer"
                     onClick={() => setExpandedRow(isExpanded ? null : row.id)}>
                     <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
                       style={{ background: hasOverdue ? '#fef2f2' : '#f0fdf4' }}>
@@ -221,7 +221,7 @@ export default function Tab5Payments({ user }: { user: SessionUser }) {
                       )}
                       <span className="text-slate-400">{isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</span>
                     </div>
-                  </button>
+                  </div>
 
                   {/* Milestones */}
                   {isExpanded && row.milestones.length > 0 && (

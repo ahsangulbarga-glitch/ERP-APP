@@ -58,13 +58,17 @@ export default function DealChainModal({ seed, onClose, onMilestonePaid }: Props
         if (q) { setQuote(q); resolvedPoNumber = resolvedPoNumber || q.poNumber }
       }
 
-      // Fetch PO
-      if (resolvedPoNumber) {
-        const res = await fetch(`/api/po-tracker?poNumber=${encodeURIComponent(resolvedPoNumber)}`)
+      // Fetch PO — try by poNumber first, fall back to qtRef
+      if (resolvedPoNumber || resolvedQtRef) {
+        const param = resolvedPoNumber
+          ? `poNumber=${encodeURIComponent(resolvedPoNumber)}`
+          : `qtRef=${encodeURIComponent(resolvedQtRef!)}`
+        const res = await fetch(`/api/po-tracker?${param}`)
         const data = await res.json()
         const p: PO | undefined = Array.isArray(data) ? data[0] : undefined
         if (p) {
           setPo(p)
+          resolvedPoNumber = resolvedPoNumber || p.poNumber
           // If we don't have the quote yet, try via qtRef on PO
           if (!resolvedQtRef && p.qtRef) {
             resolvedQtRef = p.qtRef
@@ -159,26 +163,35 @@ export default function DealChainModal({ seed, onClose, onMilestonePaid }: Props
           >
             {po && (
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs font-bold" style={{ color: '#7c3aed' }}>{po.poNumber}</span>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                    style={{ background: po.paymentStatus === 'Paid' ? '#f0fdf4' : po.paymentStatus === 'Overdue' ? '#fef2f2' : '#fffbeb',
-                             color:      po.paymentStatus === 'Paid' ? '#15803d' : po.paymentStatus === 'Overdue' ? '#b91c1c' : '#b45309' }}>
-                    {po.paymentStatus}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                  <Row label="PO Date"    value={new Date(po.poDate).toLocaleDateString('en-GB')} />
-                  <Row label="Inc-VAT"    value={`SAR ${fmt(po.totalValueIncVat)}`} bold />
-                  {po.qtRef && <Row label="QT Ref" value={po.qtRef} mono />}
-                </div>
-                {/* Collection bar */}
-                <div className="flex items-center gap-2 mt-1">
-                  <div className="flex-1 h-1.5 rounded-full" style={{ background: '#e2e8f0' }}>
-                    <div className="h-1.5 rounded-full" style={{ width: `${Math.min(po.paymentCollectionPct, 100)}%`, background: po.paymentCollectionPct >= 100 ? '#16a34a' : po.paymentCollectionPct >= 50 ? '#2563eb' : '#ea580c' }} />
-                  </div>
-                  <span className="text-xs font-semibold text-slate-600">{Number(po.paymentCollectionPct).toFixed(0)}% collected</span>
-                </div>
+                {(() => {
+                  const pct    = payment != null ? payment.collectionPct : po.paymentCollectionPct
+                  const status = payment != null
+                    ? (payment.collectionPct >= 100 ? 'Paid' : payment.collectionPct > 0 ? 'PartiallyPaid' : 'Pending')
+                    : po.paymentStatus
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold" style={{ color: '#7c3aed' }}>{po.poNumber}</span>
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                          style={{ background: status === 'Paid' ? '#f0fdf4' : status === 'Overdue' ? '#fef2f2' : '#fffbeb',
+                                   color:      status === 'Paid' ? '#15803d' : status === 'Overdue' ? '#b91c1c' : '#b45309' }}>
+                          {status}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                        <Row label="PO Date" value={new Date(po.poDate).toLocaleDateString('en-GB')} />
+                        <Row label="Inc-VAT" value={`SAR ${fmt(po.totalValueIncVat)}`} bold />
+                        {po.qtRef && <Row label="QT Ref" value={po.qtRef} mono />}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <div className="flex-1 h-1.5 rounded-full" style={{ background: '#e2e8f0' }}>
+                          <div className="h-1.5 rounded-full" style={{ width: `${Math.min(pct, 100)}%`, background: pct >= 100 ? '#16a34a' : pct >= 50 ? '#2563eb' : '#ea580c' }} />
+                        </div>
+                        <span className="text-xs font-semibold text-slate-600">{Number(pct).toFixed(0)}% collected</span>
+                      </div>
+                    </>
+                  )
+                })()}
               </div>
             )}
           </ChainBlock>

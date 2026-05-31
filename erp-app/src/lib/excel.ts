@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx'
+﻿import * as XLSX from 'xlsx'
 import { Role } from '@/types'
 import { canRead } from './rbac'
 
@@ -30,7 +30,7 @@ export function filterExportByRole<T extends { kaeAssignedId?: string; assignedK
   tab: string
 ): T[] {
   if (!canRead(role, tab)) return []
-  if (role === 'P5_KEY_ACCOUNT_ENGINEER') {
+  if (role === 'P6_KEY_ACCOUNT_ENGINEER') {
     return data.filter(
       (row) => row.kaeAssignedId === userId || row.assignedKaeId === userId
     )
@@ -45,6 +45,10 @@ export const QUOTATION_TEMPLATE_HEADERS = [
 
 export const CUSTOMER_TEMPLATE_HEADERS = [
   'customerName', 'assignedKae', 'firstActivityDate', 'lastActivityDate', 'remarks',
+]
+
+export const INVENTORY_TEMPLATE_HEADERS = [
+  'productRef', 'description', 'stockAvailability', 'quantity', 'orderToFactory', 'remarks',
 ]
 
 export function generateTemplate(headers: string[], sheetName: string): Buffer {

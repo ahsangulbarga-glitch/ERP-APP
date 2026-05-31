@@ -3,10 +3,9 @@
   "configurations": [
     {
       "name": "erp-app",
-      "runtimeExecutable": "C:\\Users\\Ahsan\\ONEDRI~1\\ERP-APP\\erp-app\\START-~1.CMD",
+      "runtimeExecutable": "C:\\Users\\Ahsan\\erp-dev.cmd",
       "runtimeArgs": [],
-      "port": 3000,
-      "autoPort": true
+      "port": 3000
     }
   ]
 }

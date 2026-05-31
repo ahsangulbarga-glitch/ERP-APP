@@ -74,6 +74,27 @@ export async function GET(req: NextRequest) {
       'Days Remaining': r.remainingDaysForExpiry,
       'Status': r.status, 'Remarks': r.remarks || '',
     }))
+  } else if (tab === 'materials') {
+    const search      = filters.search
+    const availability = filters.availability
+    const orderToFactory = filters.orderToFactory
+    const where: Record<string, unknown> = {}
+    if (search) where.OR = [{ productRef: { contains: search } }, { description: { contains: search } }]
+    if (availability) where.stockAvailability = availability
+    if (orderToFactory === 'true')  where.orderToFactory = true
+    if (orderToFactory === 'false') where.orderToFactory = false
+    const rows = await prisma.materialItem.findMany({ where, orderBy: { productRef: 'asc' } })
+    data = rows.map((r) => ({
+      'Product Ref':        r.productRef,
+      'Description':        r.description,
+      'Stock Availability': r.stockAvailability,
+      'Total Quantity':     r.quantity,
+      'Reserved Qty':       r.reservedQty ?? 0,
+      'Available Qty':      r.quantity - (r.reservedQty ?? 0),
+      'Reserved For PO':    r.reservedForPO || '',
+      'Order to Factory':   r.orderToFactory ? 'Yes' : 'No',
+      'Remarks':            r.remarks || '',
+    }))
   } else {
     return NextResponse.json({ error: 'Invalid tab' }, { status: 400 })
   }

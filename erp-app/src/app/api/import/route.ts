@@ -48,6 +48,31 @@ export async function POST(req: NextRequest) {
             createdBy: session.user!.id,
           },
         })
+      } else if (tab === 'materials') {
+        const ref = String(row.productRef || row['Product Ref'] || '').trim().toUpperCase()
+        const desc = String(row.description || row['Description'] || '').trim()
+        if (!ref || !desc) continue
+        const avail = String(row.stockAvailability || row['Stock Availability'] || 'In Stock').trim()
+        const validAvail = ['In Stock', 'Low Stock', 'Out of Stock', 'Reserved'].includes(avail) ? avail : 'In Stock'
+        const qty    = parseInt(String(row.quantity || row['Total Quantity'] || row['Quantity'] || '0')) || 0
+        const rsvQty = parseInt(String(row.reservedQty || row['Reserved Qty'] || '0')) || 0
+        const rsvPO  = String(row.reservedForPO || row['Reserved For PO'] || '').trim().toUpperCase() || null
+        const otf    = String(row.orderToFactory || row['Order to Factory'] || '').toLowerCase()
+        const orderToFactory = otf === 'true' || otf === 'yes' || otf === '1'
+        const safeRsvQty = validAvail === 'Reserved' ? Math.min(rsvQty, qty) : 0
+        const safePO     = validAvail === 'Reserved' ? rsvPO : null
+        const remarks    = String(row.remarks || row['Remarks'] || '') || null
+        const existing   = await prisma.materialItem.findUnique({ where: { productRef: ref } })
+        if (existing) {
+          await prisma.materialItem.update({
+            where: { productRef: ref },
+            data: { description: desc, stockAvailability: validAvail, quantity: qty, reservedQty: safeRsvQty, reservedForPO: safePO, orderToFactory, remarks },
+          })
+        } else {
+          await prisma.materialItem.create({
+            data: { productRef: ref, description: desc, stockAvailability: validAvail, quantity: qty, reservedQty: safeRsvQty, reservedForPO: safePO, orderToFactory, remarks, createdBy: session.user!.id },
+          })
+        }
       }
       imported++
     } catch (e) {

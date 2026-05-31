@@ -1,8 +1,9 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState } from 'react'
 import { SessionUser, ROLE_LABELS, Role } from '@/types'
-import { UserPlus, Pencil, Power } from 'lucide-react'
+import { canExportReport } from '@/lib/rbac'
+import { UserPlus, Pencil, Power, FileDown, Sheet } from 'lucide-react'
 
 interface UserRow {
   id: string
@@ -18,7 +19,7 @@ export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editUser, setEditUser] = useState<UserRow | null>(null)
-  const [form, setForm] = useState({ name: '', email: '', role: 'P5_KEY_ACCOUNT_ENGINEER', pin: '' })
+  const [form, setForm] = useState({ name: '', email: '', role: 'P6_KEY_ACCOUNT_ENGINEER', pin: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -34,7 +35,7 @@ export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
 
   const openNew = () => {
     setEditUser(null)
-    setForm({ name: '', email: '', role: 'P5_KAE', pin: '' })
+    setForm({ name: '', email: '', role: 'P6_KEY_ACCOUNT_ENGINEER', pin: '' })
     setError('')
     setShowModal(true)
   }
@@ -85,15 +86,68 @@ export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
     load()
   }
 
-  const ROLE_OPTIONS: Role[] = ['P1_CEO', 'P2_ADMIN', 'P3_REGIONAL_MANAGER', 'P4_SALES_MANAGER', 'P5_KEY_ACCOUNT_ENGINEER', 'P6_INSIDE_SALES_ENGINEER', 'P7_ACCOUNTANT', 'P8_HR']
+  const ROLE_OPTIONS: Role[] = [
+    'P1_CEO',
+    'P2_ADMIN',
+    'P4_REGIONAL_MANAGER',      // Divisional Manager
+    'P5_SALES_MANAGER',
+    'P3_KEY_ACCOUNT_MANAGER',   // Key Account Manager
+    'P6_KEY_ACCOUNT_ENGINEER',
+    'P7_INSIDE_SALES_ENGINEER',
+    'P8_ACCOUNTANT',
+    'P9_HR',
+    'P10_LOGISTICS_MANAGER',
+    'P11_PURCHASE_MANAGER',
+    'P12_WAREHOUSE_MANAGER',
+  ]
+
+  const exportCSV = () => {
+    const headers = ['Name', 'Email', 'Role', 'Status', 'Created']
+    const rows = users.map(u => [
+      `"${u.name}"`,
+      `"${u.email}"`,
+      `"${ROLE_LABELS[u.role as Role] || u.role}"`,
+      u.isActive ? 'Active' : 'Inactive',
+      new Date(u.createdAt).toLocaleDateString(),
+    ])
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    const date = new Date().toISOString().slice(0, 10)
+    a.href     = url
+    a.download = `DLIT-Users-${date}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-bold text-slate-800">User Management</h2>
-        <button onClick={openNew} className="btn-primary flex items-center gap-2 text-sm">
-          <UserPlus size={16} /> Add User
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Export PDF â€” admin only */}
+          {canExportReport(currentUser.role, 'users') && (
+            <a href="/api/users/export" download
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all hover:opacity-80"
+              style={{ background: 'rgba(220,38,38,0.08)', color: '#DC2626', borderColor: 'rgba(220,38,38,0.25)' }}
+              title="Export Users PDF">
+              <FileDown size={13} /> PDF
+            </a>
+          )}
+          {/* Export CSV â€” admin only */}
+          {canExportReport(currentUser.role, 'users') && (
+            <button onClick={exportCSV}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-all hover:opacity-80"
+              style={{ background: 'rgba(22,163,74,0.08)', color: '#16A34A', borderColor: 'rgba(22,163,74,0.25)' }}
+              title="Export Users CSV">
+              <Sheet size={13} /> CSV
+            </button>
+          )}
+          <button onClick={openNew} className="btn-primary flex items-center gap-2 text-sm">
+            <UserPlus size={16} /> Add User
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -170,7 +224,7 @@ export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
               </div>
               <div>
                 <label className="text-xs font-medium text-slate-600">{editUser ? 'New PIN (leave blank to keep current)' : '4-Digit PIN'}</label>
-                <input type="password" maxLength={4} inputMode="numeric" className="input-sm w-full mt-1" placeholder="••••"
+                <input type="password" maxLength={4} inputMode="numeric" className="input-sm w-full mt-1" placeholder="â€¢â€¢â€¢â€¢"
                   value={form.pin} onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '') })} />
               </div>
             </div>

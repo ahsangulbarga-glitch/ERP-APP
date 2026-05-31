@@ -1,7 +1,8 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useState, useCallback } from 'react'
 import { SessionUser } from '@/types'
+import { canExportReport } from '@/lib/rbac'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, RadarChart, Radar, PolarGrid, PolarAngleAxis,
@@ -9,10 +10,10 @@ import {
 import {
   Users, TrendingUp, Trophy, Target, ShieldCheck, FileWarning,
   AlertTriangle, CheckCircle2, Clock, Zap, ChevronDown, ChevronUp,
-  BarChart2, Percent,
+  BarChart2, Percent, FileDown, Presentation,
 } from 'lucide-react'
 
-/* ── Types ─────────────────────────────────────────────────────────── */
+/* â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 interface PerfUser { id: string; name: string; role: string }
 
 interface KAEData {
@@ -54,8 +55,11 @@ interface PerfResponse {
   kae?: KAEData; ise?: ISEData; sm?: SMData; accountant?: AccountantData; hr?: HRData; ceo?: CEOData
 }
 
-/* ── Helpers ─────────────────────────────────────────────────────── */
-const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(0)}K` : n.toFixed(0)
+/* â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+const fmt = (n: number | undefined | null) => {
+  const v = Number(n ?? 0)
+  return v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${(v / 1_000).toFixed(0)}K` : v.toFixed(0)
+}
 
 const STATUS_COLORS: Record<string, string> = { Open: '#2563eb', Converted: '#16a34a', Lost: '#dc2626', OnHold: '#d97706' }
 const AGING_COLORS = ['#16a34a', '#d97706', '#ea580c', '#dc2626', '#b91c1c']
@@ -73,7 +77,7 @@ const DarkTip = ({ active, payload, label }: { active?: boolean; payload?: { nam
   )
 }
 
-/* ── SVG Arc Gauge ─────────────────────────────────────────────── */
+/* â”€â”€ SVG Arc Gauge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const ArcGauge = ({ value, label, color, size = 110 }: { value: number; label: string; color: string; size?: number }) => {
   const pct  = Math.min(Math.max(value, 0), 100)
   const r    = 40; const cx = 60; const cy = 60
@@ -96,7 +100,7 @@ const ArcGauge = ({ value, label, color, size = 110 }: { value: number; label: s
   )
 }
 
-/* ── Section card wrapper ─────────────────────────────────────── */
+/* â”€â”€ Section card wrapper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const MetricCard = ({ label, value, sub, icon, color }: { label: string; value: string | number; sub?: string; icon: React.ReactNode; color: string }) => (
   <div className="rounded-xl p-3.5 flex items-center gap-3 transition-all hover:-translate-y-0.5"
     style={{ background: `${color}0d`, border: `1px solid ${color}30` }}>
@@ -126,9 +130,9 @@ const SectionHead = ({ title, sub }: { title: string; sub?: string }) => (
   </div>
 )
 
-/* ════════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    KAE VIEW
-════════════════════════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function KAEView({ d }: { d: KAEData }) {
   return (
     <div className="space-y-4">
@@ -137,7 +141,7 @@ function KAEView({ d }: { d: KAEData }) {
         <MetricCard label="Win Rate"           value={`${d.winRate.toFixed(1)}%`}         sub={`${d.totalConverted}/${d.totalRfq} RFQs`} icon={<Target size={16} />}    color="#16a34a" />
         <MetricCard label="Revenue (inc-VAT)"  value={`SAR ${fmt(d.totalPoValue)}`}       sub={`${d.customerCount} accounts`}            icon={<TrendingUp size={16} />} color="#2563eb" />
         <MetricCard label="Avg Collection"     value={`${d.avgCollection.toFixed(1)}%`}   sub={d.overdueCount > 0 ? `${d.overdueCount} overdue` : 'No overdue'} icon={<Percent size={16} />}   color={d.avgCollection >= 80 ? '#16a34a' : '#d97706'} />
-        <MetricCard label="Avg Engagement"     value={`${Math.round(d.avgEngagementDays)}d`} sub="First → last contact"                icon={<Clock size={16} />}     color="#7c3aed" />
+        <MetricCard label="Avg Engagement"     value={`${Math.round(d.avgEngagementDays)}d`} sub="First â†’ last contact"                icon={<Clock size={16} />}     color="#7c3aed" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
@@ -210,9 +214,9 @@ function KAEView({ d }: { d: KAEData }) {
   )
 }
 
-/* ════════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    ISE VIEW
-════════════════════════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function ISEView({ d }: { d: ISEData }) {
   return (
     <div className="space-y-4">
@@ -307,9 +311,9 @@ function ISEView({ d }: { d: ISEData }) {
   )
 }
 
-/* ════════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    SALES MANAGER VIEW
-════════════════════════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function SMView({ d }: { d: SMData }) {
   const maxRevenue = Math.max(...d.kaeLeaderboard.map(k => k.revenue), 1)
   return (
@@ -326,7 +330,7 @@ function SMView({ d }: { d: SMData }) {
           <SectionHead title="KAE Leaderboard" sub="Ranked by revenue generated" />
           <div className="px-4 py-3 space-y-4">
             {d.kaeLeaderboard.map((k, i) => {
-              const medals = ['🥇', '🥈', '🥉']
+              const medals = ['ðŸ¥‡', 'ðŸ¥ˆ', 'ðŸ¥‰']
               return (
                 <div key={k.name}>
                   <div className="flex items-center justify-between mb-1">
@@ -367,7 +371,7 @@ function SMView({ d }: { d: SMData }) {
             </div>
             <div className="px-4 pb-4 text-center">
               <p className="text-xs text-slate-400">
-                {d.overdueCount === 0 ? '✅ No overdue milestones' : `${d.overdueCount} milestone${d.overdueCount > 1 ? 's' : ''} require attention`}
+                {d.overdueCount === 0 ? 'âœ… No overdue milestones' : `${d.overdueCount} milestone${d.overdueCount > 1 ? 's' : ''} require attention`}
               </p>
             </div>
           </Panel>
@@ -380,7 +384,7 @@ function SMView({ d }: { d: SMData }) {
                   <div key={ise.name}>
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-xs font-semibold text-slate-700">{ise.name.split(' ')[0]}</span>
-                      <span className="text-xs text-slate-500">{ise.openQuotes} open · SAR {fmt(ise.pipelineValue)}</span>
+                      <span className="text-xs text-slate-500">{ise.openQuotes} open Â· SAR {fmt(ise.pipelineValue)}</span>
                     </div>
                     <div className="progress-bar">
                       <div className="progress-bar-fill" style={{ width: `${Math.min((ise.pipelineValue / 2_000_000) * 100, 100)}%`, background: '#0891b2' }} />
@@ -396,7 +400,7 @@ function SMView({ d }: { d: SMData }) {
       {/* Team radar */}
       {d.kaeLeaderboard.length > 0 && (
         <Panel>
-          <SectionHead title="Team Performance Radar" sub="Win Rate · Avg Collection · Accounts (normalised)" />
+          <SectionHead title="Team Performance Radar" sub="Win Rate Â· Avg Collection Â· Accounts (normalised)" />
           <div className="p-4">
             <ResponsiveContainer width="100%" height={220}>
               <RadarChart data={d.kaeLeaderboard.map(k => ({
@@ -419,9 +423,9 @@ function SMView({ d }: { d: SMData }) {
   )
 }
 
-/* ════════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    ACCOUNTANT VIEW
-════════════════════════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function AccountantView({ d }: { d: AccountantData }) {
   return (
     <div className="space-y-4">
@@ -470,7 +474,7 @@ function AccountantView({ d }: { d: AccountantData }) {
                     <span className="w-2.5 h-2.5 rounded-sm" style={{ background: AGING_COLORS[i] || '#dc2626' }} />
                     <span className="text-slate-600">{bucket.label}</span>
                   </div>
-                  <span className="font-semibold text-slate-800">{bucket.count} items · SAR {fmt(bucket.value)}</span>
+                  <span className="font-semibold text-slate-800">{bucket.count} items Â· SAR {fmt(bucket.value)}</span>
                 </div>
               ))}
             </div>
@@ -481,9 +485,9 @@ function AccountantView({ d }: { d: AccountantData }) {
   )
 }
 
-/* ════════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    HR VIEW
-════════════════════════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function HRView({ d }: { d: HRData }) {
   return (
     <div className="space-y-4">
@@ -491,13 +495,13 @@ function HRView({ d }: { d: HRData }) {
         <MetricCard label="Total Documents"   value={d.total}              sub="Tracked"              icon={<FileWarning size={16} />} color="#2563eb" />
         <MetricCard label="Active"            value={d.active}             sub="In compliance"        icon={<ShieldCheck size={16} />} color="#16a34a" />
         <MetricCard label="Expiring Soon"     value={d.expiring}           sub="Within 30 days"       icon={<Clock size={16} />}      color="#d97706" />
-        <MetricCard label="Expired"           value={d.expired}            sub={d.expired === 0 ? 'Zero risk ✓' : 'Action required!'} icon={<AlertTriangle size={16} />} color={d.expired > 0 ? '#dc2626' : '#16a34a'} />
+        <MetricCard label="Expired"           value={d.expired}            sub={d.expired === 0 ? 'Zero risk âœ“' : 'Action required!'} icon={<AlertTriangle size={16} />} color={d.expired > 0 ? '#dc2626' : '#16a34a'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* Compliance gauges */}
         <Panel className="lg:col-span-2">
-          <SectionHead title="Compliance Scores" sub="Active rate · Proactive renewal" />
+          <SectionHead title="Compliance Scores" sub="Active rate Â· Proactive renewal" />
           <div className="flex items-center justify-around p-4">
             <ArcGauge value={d.complianceScore}  label="Compliant"   color={d.complianceScore >= 90 ? '#16a34a' : '#d97706'} size={120} />
             <ArcGauge value={d.proactiveIndex}   label="Proactive"   color={d.proactiveIndex >= 90 ? '#2563eb' : '#d97706'}   size={120} />
@@ -528,7 +532,7 @@ function HRView({ d }: { d: HRData }) {
       {/* Risk documents list */}
       {d.riskDocs.length > 0 && (
         <Panel>
-          <SectionHead title="Document Risk Register" sub="Expiring soon or expired — requires action" />
+          <SectionHead title="Document Risk Register" sub="Expiring soon or expired â€” requires action" />
           <div className="divide-y divide-slate-50">
             {d.riskDocs.map((doc, i) => {
               const isExpired = doc.status === 'Expired'
@@ -559,9 +563,9 @@ function HRView({ d }: { d: HRData }) {
   )
 }
 
-/* ════════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    CEO / Overview VIEW
-════════════════════════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function CEOView({ d }: { d: CEOData }) {
   return (
     <div className="space-y-4">
@@ -600,16 +604,17 @@ function CEOView({ d }: { d: CEOData }) {
   )
 }
 
-/* ════════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    MAIN EXPORT
-════════════════════════════════════════════════════════════════════ */
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 export default function PerformancePanel({ user, defaultExpanded = true }: { user: SessionUser; defaultExpanded?: boolean }) {
-  const isViewer = ['P1_CEO', 'P2_ADMIN', 'P3_REGIONAL_MANAGER', 'P4_SALES_MANAGER'].includes(user.role)
+  const isViewer = ['P1_CEO', 'P2_ADMIN', 'P4_REGIONAL_MANAGER', 'P5_SALES_MANAGER'].includes(user.role)
 
   const [expanded,   setExpanded]   = useState(defaultExpanded)
   const [users,      setUsers]      = useState<PerfUser[]>([])
   const [selectedId, setSelectedId] = useState(user.id)
   const [perfData,   setPerfData]   = useState<PerfResponse | null>(null)
+  const [perfError,  setPerfError]  = useState<string | null>(null)
   const [loading,    setLoading]    = useState(false)
 
   /* Load user list for CEO/Admin selector */
@@ -623,11 +628,19 @@ export default function PerformancePanel({ user, defaultExpanded = true }: { use
   /* Load performance data */
   const loadPerf = useCallback(async () => {
     setLoading(true)
+    setPerfError(null)
     try {
       const url = isViewer ? `/api/performance?userId=${selectedId}` : '/api/performance'
       const res = await fetch(url)
       const data = await res.json()
-      setPerfData(data)
+      if (!res.ok || data.error) {
+        setPerfError(data.error || `Server error ${res.status}`)
+        setPerfData(null)
+      } else {
+        setPerfData(data)
+      }
+    } catch (e) {
+      setPerfError(String(e))
     } finally { setLoading(false) }
   }, [selectedId, isViewer])
 
@@ -636,9 +649,9 @@ export default function PerformancePanel({ user, defaultExpanded = true }: { use
   /* Role label helper */
   const roleLabel = (role: string) => {
     const map: Record<string, string> = {
-      P1_CEO: 'CEO', P2_ADMIN: 'Admin', P3_REGIONAL_MANAGER: 'Regional Manager',
-      P4_SALES_MANAGER: 'Sales Manager', P5_KEY_ACCOUNT_ENGINEER: 'KAE',
-      P6_INSIDE_SALES_ENGINEER: 'Inside Sales', P7_ACCOUNTANT: 'Accountant', P8_HR: 'HR',
+      P1_CEO: 'CEO', P2_ADMIN: 'Admin', P4_REGIONAL_MANAGER: 'Regional Manager',
+      P5_SALES_MANAGER: 'Sales Manager', P6_KEY_ACCOUNT_ENGINEER: 'KAE',
+      P7_INSIDE_SALES_ENGINEER: 'Inside Sales', P8_ACCOUNTANT: 'Accountant', P9_HR: 'HR',
     }
     return map[role] || role
   }
@@ -652,9 +665,9 @@ export default function PerformancePanel({ user, defaultExpanded = true }: { use
   }, {} as Record<string, PerfUser[]>)
 
   const roleColors: Record<string, string> = {
-    P5_KEY_ACCOUNT_ENGINEER: '#16a34a', P6_INSIDE_SALES_ENGINEER: '#0891b2',
-    P4_SALES_MANAGER: '#7c3aed', P3_REGIONAL_MANAGER: '#7c3aed',
-    P7_ACCOUNTANT: '#d97706', P8_HR: '#dc2626',
+    P6_KEY_ACCOUNT_ENGINEER: '#16a34a', P7_INSIDE_SALES_ENGINEER: '#0891b2',
+    P5_SALES_MANAGER: '#7c3aed', P4_REGIONAL_MANAGER: '#7c3aed',
+    P8_ACCOUNTANT: '#d97706', P9_HR: '#dc2626',
     P1_CEO: '#2563eb', P2_ADMIN: '#2563eb',
   }
 
@@ -672,7 +685,7 @@ export default function PerformancePanel({ user, defaultExpanded = true }: { use
           <div>
             <h3 className="font-bold text-white text-sm tracking-tight">Performance Analytics</h3>
             <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
-              {perfData ? `${perfData.userName} · ${roleLabel(perfData.role)}` : 'Loading…'}
+              {perfData ? `${perfData.userName} Â· ${roleLabel(perfData.role)}` : 'Loadingâ€¦'}
             </p>
           </div>
           {perfData && (
@@ -687,7 +700,7 @@ export default function PerformancePanel({ user, defaultExpanded = true }: { use
           )}
         </div>
         <div className="flex items-center gap-3">
-          {/* User selector — CEO/Admin only */}
+          {/* User selector â€” CEO/Admin only */}
           {isViewer && users.length > 0 && (
             <select
               value={selectedId}
@@ -706,6 +719,23 @@ export default function PerformancePanel({ user, defaultExpanded = true }: { use
               ))}
             </select>
           )}
+          {/* Export buttons â€” management roles only */}
+          {canExportReport(user.role, 'performance') && (
+            <a href="/api/performance/pdf" download onClick={e => e.stopPropagation()}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
+              style={{ background: 'rgba(220,38,38,0.15)', color: '#f87171', border: '1px solid rgba(220,38,38,0.3)' }}
+              title="Export Performance PDF">
+              <FileDown size={11} /> PDF
+            </a>
+          )}
+          {canExportReport(user.role, 'performance') && (
+            <a href="/api/performance/pptx" download onClick={e => e.stopPropagation()}
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-all hover:opacity-80"
+              style={{ background: 'rgba(234,88,12,0.15)', color: '#fb923c', border: '1px solid rgba(234,88,12,0.3)' }}
+              title="Export Performance PowerPoint">
+              <Presentation size={11} /> PPTX
+            </a>
+          )}
           <span style={{ color: 'rgba(255,255,255,0.5)' }}>
             {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </span>
@@ -720,9 +750,17 @@ export default function PerformancePanel({ user, defaultExpanded = true }: { use
               <div className="grid grid-cols-4 gap-3">{[...Array(4)].map((_, i) => <div key={i} className="h-16 rounded-xl shimmer" />)}</div>
               <div className="grid grid-cols-5 gap-4"><div className="col-span-3 h-56 rounded-2xl shimmer" /><div className="col-span-2 h-56 rounded-2xl shimmer" /></div>
             </div>
+          ) : perfError ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-red-400">
+              <AlertTriangle size={20} className="opacity-70" /><span className="text-sm">{perfError}</span>
+            </div>
           ) : !perfData ? (
             <div className="flex items-center justify-center gap-2 py-12 text-slate-400">
               <AlertTriangle size={20} className="opacity-50" /><span className="text-sm">Unable to load performance data</span>
+            </div>
+          ) : !perfData.kae && !perfData.ise && !perfData.sm && !perfData.accountant && !perfData.hr && !perfData.ceo ? (
+            <div className="flex items-center justify-center gap-2 py-12 text-slate-400">
+              <AlertTriangle size={20} className="opacity-50" /><span className="text-sm">No performance data available for this role</span>
             </div>
           ) : (
             <>
