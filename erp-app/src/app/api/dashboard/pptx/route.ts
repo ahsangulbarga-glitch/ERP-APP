@@ -1,7 +1,6 @@
 ﻿import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { requireTenant } from '@/lib/tenant'
 import { canExportReport } from '@/lib/rbac'
-import prisma from '@/lib/db'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PptxGenJS = require('pptxgenjs')
 
@@ -28,8 +27,9 @@ const fmtDate = (d: string | Date) => {
 }
 
 export async function GET() {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (!canExportReport(session.user.role, 'dashboard')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const role          = session.user.role
@@ -42,16 +42,21 @@ export async function GET() {
 
   // â”€â”€ Fetch all data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [quotesAll, posAll, paymentsAll, docs] = await Promise.all([
-    prisma.quotation.findMany({ orderBy: { qtnDate: 'desc' }, include: { kaeAssigned: true } }),
-    prisma.pOTracker.findMany({ orderBy: { poDate: 'desc' } }),
-    prisma.payment.findMany({ include: { milestones: true, quotation: true } }),
-    prisma.document.findMany(),
+    db.quotation.findMany({ orderBy: { qtnDate: 'desc' }, include: { kaeAssigned: true } }),
+    db.pOTracker.findMany({ orderBy: { poDate: 'desc' } }),
+    db.payment.findMany({ include: { milestones: true } }),
+    db.document.findMany(),
   ])
+
+  // Build quotationId → projectName lookup (Payment has no quotation relation)
+  const qtProjectMap: Record<string, string> = Object.fromEntries(
+    quotesAll.map(q => [q.id, q.projectName || ''])
+  )
 
   // Build KAE-name â†’ Sales Manager-name map for CEO/Admin view
   const kaeToManagerName: Record<string, string> = {}
   if (isCeoOrGm) {
-    const allUsers = await prisma.user.findMany({ select: { id: true, name: true, createdBy: true } })
+    const allUsers = await db.user.findMany({ select: { id: true, name: true, createdBy: true } })
     const userById: Record<string, string> = Object.fromEntries(allUsers.map(u => [u.id, u.name]))
     for (const u of allUsers) {
       if (u.createdBy && userById[u.createdBy]) kaeToManagerName[u.name] = userById[u.createdBy]
@@ -62,7 +67,7 @@ export async function GET() {
   let teamKaeIds   = new Set<string>()
   let teamKaeNames = new Set<string>()
   if (isSalesMgr) {
-    const teamKaes = await prisma.user.findMany({ where: { createdBy: session.user.id }, select: { id: true, name: true } })
+    const teamKaes = await db.user.findMany({ where: { createdBy: session.user.id }, select: { id: true, name: true } })
     teamKaeIds   = new Set(teamKaes.map(k => k.id))
     teamKaeNames = new Set(teamKaes.map(k => k.name))
   }
@@ -108,7 +113,7 @@ export async function GET() {
       .map(m => ({
         poNumber:     p.poNumber,
         customerName: p.customerName,
-        projectName:  p.quotation?.projectName || '',
+        projectName:  qtProjectMap[p.quotationId || ''] || '',
         phaseName:    m.phaseName,
         amountSar:    Number(m.amountSar),
         paidAt:       m.paidAt!,
@@ -125,7 +130,7 @@ export async function GET() {
       .map(m => ({
         poNumber:     p.poNumber,
         customerName: p.customerName,
-        projectName:  p.quotation?.projectName || '',
+        projectName:  qtProjectMap[p.quotationId || ''] || '',
         phaseName:    m.phaseName,
         amountSar:    Number(m.amountSar),
         dueDate:      m.dueDate,
@@ -438,7 +443,7 @@ export async function GET() {
 
     const ovdWithPO = payments.flatMap(p => (p.milestones ?? []).filter(m => m.status === 'Overdue').map(m => ({
       poNumber: p.poNumber, customerName: p.customerName,
-      projectName: p.quotation?.projectName || 'â€”',
+      projectName: qtProjectMap[p.quotationId || ''] || '—',
       phaseName: m.phaseName, amountSar: Number(m.amountSar), dueDate: m.dueDate,
       overdueDays: Math.round((todayTs.getTime() - new Date(m.dueDate).getTime()) / 86_400_000),
     })))

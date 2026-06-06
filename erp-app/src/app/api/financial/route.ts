@@ -1,7 +1,6 @@
 ﻿import { NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { requireTenant } from '@/lib/tenant'
 import { canExportReport } from '@/lib/rbac'
-import prisma from '@/lib/db'
 import { createElement } from 'react'
 import FinancialPDF from '@/components/pdf/FinancialPDF'
 
@@ -13,8 +12,9 @@ const today = () => {
 }
 
 export async function GET() {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (!canExportReport(session.user.role, 'financial'))
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
@@ -23,17 +23,23 @@ export async function GET() {
   // Sales Manager: restrict to their team's KAEs
   let teamKaeNames = new Set<string>()
   if (isSalesMgr) {
-    const teamKaes = await prisma.user.findMany({ where: { createdBy: session.user.id }, select: { name: true } })
+    const teamKaes = await db.user.findMany({ where: { createdBy: session.user.id }, select: { name: true } })
     teamKaeNames = new Set(teamKaes.map(k => k.name))
   }
 
-  const [rawPos, payments] = await Promise.all([
-    prisma.pOTracker.findMany({ orderBy: { poDate: 'desc' } }),
-    prisma.payment.findMany({
-      include: { milestones: true, quotation: true },
+  const [rawPos, payments, quotesAll] = await Promise.all([
+    db.pOTracker.findMany({ orderBy: { poDate: 'desc' } }),
+    db.payment.findMany({
+      include: { milestones: true },
       orderBy: { createdAt: 'desc' },
     }),
+    db.quotation.findMany({ select: { id: true, projectName: true } }),
   ])
+
+  // Build quotationId → projectName lookup (Payment has no quotation relation)
+  const qtProjectMap: Record<string, string> = Object.fromEntries(
+    quotesAll.map(q => [q.id, q.projectName || ''])
+  )
 
   const filteredPos = isSalesMgr
     ? rawPos.filter(p => p.kaeName && teamKaeNames.has(p.kaeName))
@@ -58,7 +64,7 @@ export async function GET() {
     .flatMap(p => (p.milestones ?? []).map(m => ({
       poNumber:     p.poNumber,
       customerName: p.customerName,
-      projectName:  p.quotation?.projectName || '',
+      projectName:  qtProjectMap[p.quotationId || ''] || '',
       phaseName:    m.phaseName,
       amountSar:    Number(m.amountSar),
       status:       m.status,
