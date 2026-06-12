@@ -103,7 +103,6 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const [perfPeriod,   setPerfPeriod]   = useState<'3m'|'6m'|'1y'|'2y'>('1y')
   const [rfqFunnel,    setRfqFunnel]    = useState<RFQStage[]>([])
   const [winLoss,      setWinLoss]      = useState<WinLossItem[]>([])
-  const [monthlyQuota, setMonthlyQuota] = useState(0)
   const [allUnpaidMilestones, setAllUnpaidMilestones] = useState<UpcomingMilestone[]>([])
   const [rawQuotes,   setRawQuotes]   = useState<{ customer: string; amountSar: number; status: string }[]>([])
   const [rawPayments, setRawPayments] = useState<{ customer: string; billed: number; collected: number }[]>([])
@@ -118,12 +117,13 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
   const loadStats = async () => {
     setLoading(true)
     try {
+      const safeJson = (r: Response) => r.ok ? r.json() : Promise.resolve([])
       const [qRes, poRes, payRes, docRes, custRes] = await Promise.all([
-        fetch('/api/quotations').then(r => r.json()),
-        fetch('/api/po-tracker').then(r => r.json()),
-        fetch('/api/payments').then(r => r.json()),
-        fetch('/api/documents').then(r => r.json()),
-        fetch('/api/customers').then(r => r.json()),
+        fetch('/api/quotations').then(safeJson),
+        fetch('/api/po-tracker').then(safeJson),
+        fetch('/api/payments').then(safeJson),
+        fetch('/api/documents').then(safeJson),
+        fetch('/api/customers').then(safeJson),
       ])
 
       const quotes    = Array.isArray(qRes)    ? qRes    as RawQuote[]    : []
@@ -252,12 +252,6 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
         .sort((a, b) => b.winRate - a.winRate)
       setWinLoss(winLossItems)
 
-      /* ── Monthly Quota (avg of last 3 months PO value) ── */
-      const sortedMonths = Object.entries(monthMap).sort(([a], [b]) => a.localeCompare(b))
-      const last3 = sortedMonths.slice(-3).map(([, v]) => v.pos)
-      const avgQuota = last3.length > 0 ? last3.reduce((s, v) => s + v, 0) / last3.length : 0
-      setMonthlyQuota(Math.round(avgQuota * 1.1)) // 10% growth target
-
       /* ── Recent POs (API returns sorted by poDate desc) ── */
       setRecentPOs(
         pos.slice(0, 8).map(p => ({
@@ -326,21 +320,6 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
     return trendData.filter(d => d.key >= cutKey)
   })()
 
-  /* ── Sales Forecast vs Quota ── */
-  const salesForecastData = (() => {
-    const actual = trendData.slice(-12).map(d => ({ month: d.month, actual: d.pos, quota: monthlyQuota, forecast: null as number | null }))
-    // Simple linear trend from last 6 actual data points
-    const base = actual.slice(-6).map(d => d.actual)
-    const avgGrowth = base.length > 1 ? (base[base.length - 1] - base[0]) / (base.length - 1) : 0
-    const lastVal   = base[base.length - 1] ?? 0
-    const now = new Date()
-    const projected = [1, 2, 3].map(i => {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1)
-      const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-      return { month: label, actual: null as number | null, quota: monthlyQuota, forecast: Math.max(0, Math.round(lastVal + avgGrowth * i)) }
-    })
-    return [...actual, ...projected]
-  })()
 
   const conversionRate  = stats.totalQuoted > 0 ? ((stats.convertedQuotesValue / stats.totalQuoted) * 100).toFixed(1) : '0.0'
   const collectionRate  = stats.totalBilled  > 0 ? ((stats.totalCollected / stats.totalBilled) * 100).toFixed(1) : '0.0'
@@ -1061,77 +1040,6 @@ export default function Tab1Dashboard({ user }: { user: SessionUser }) {
           </div>
         </Panel>
       </div>
-
-      {/* ── Chart 3: Sales Forecast vs. Project Quota ── */}
-      <Panel>
-        <PanelHead
-          icon={<Target size={14} className="text-emerald-500" />}
-          title="Sales Forecast vs. Project Quota"
-          sub="Actual PO revenue · projected trend · monthly quota target"
-          right={
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400">Quota:</span>
-              <span className="text-xs font-bold text-emerald-600">SAR {fmt(monthlyQuota)}/mo</span>
-              <input type="range" min={100000} max={5000000} step={100000} value={monthlyQuota}
-                onChange={e => setMonthlyQuota(Number(e.target.value))}
-                className="w-24 accent-emerald-500 h-1.5" />
-            </div>
-          }
-        />
-        <div className="p-5">
-          {salesForecastData.length > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={220}>
-                <ComposedChart data={salesForecastData} barSize={18} margin={{ right: 8 }}>
-                  <defs>
-                    <linearGradient id="actualGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#2563eb" /><stop offset="100%" stopColor="#2563eb" stopOpacity={0.4} />
-                    </linearGradient>
-                    <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.6} /><stop offset="100%" stopColor="#7c3aed" stopOpacity={0.15} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false}
-                    tickFormatter={v => `${(v/1000).toFixed(0)}K`} />
-                  <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (!active || !payload?.length) return null
-                      return (
-                        <div className="rounded-xl px-3 py-2 text-xs shadow-lg"
-                          style={{ background: '#0f172a', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}>
-                          <p className="font-semibold mb-1 text-slate-300">{label}</p>
-                          {payload.map((p, i) => p.value != null && (
-                            <p key={i} style={{ color: p.color }}>
-                              {p.name}: SAR {Number(p.value).toLocaleString('en-SA', { maximumFractionDigits: 0 })}
-                            </p>
-                          ))}
-                        </div>
-                      )
-                    }}
-                  />
-                  <ReferenceLine y={monthlyQuota} stroke="#16a34a" strokeDasharray="6 3" strokeWidth={2}
-                    label={{ value: 'Quota', position: 'right', fontSize: 10, fill: '#16a34a' }} />
-                  <Bar dataKey="actual"   name="Actual PO"  fill="url(#actualGrad)"   radius={[4,4,0,0]} />
-                  <Bar dataKey="forecast" name="Forecast"   fill="url(#forecastGrad)" radius={[4,4,0,0]} />
-                  <Line type="monotone" dataKey="quota" name="Monthly Quota" stroke="#16a34a"
-                    strokeWidth={0} dot={false} legendType="none" />
-                </ComposedChart>
-              </ResponsiveContainer>
-              <div className="flex items-center justify-center gap-5 mt-2">
-                {[['url(#actualGrad)','#2563eb','Actual PO'],['url(#forecastGrad)','#7c3aed','Projected'],['#16a34a','#16a34a','Quota Line']].map(([, c, l]) => (
-                  <div key={l} className="flex items-center gap-1.5 text-xs text-slate-500">
-                    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: c }} />{l}
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="flex items-center justify-center h-40 text-slate-400 text-sm">No data</div>
-          )}
-        </div>
-      </Panel>
 
       {/* ━━━ NEW POs RECEIVED ━━━ */}
       <Panel>
