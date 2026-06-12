@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { requireTenant } from '@/lib/tenant'
 import { canRead } from '@/lib/rbac'
-import prisma from '@/lib/db'
 import { createElement } from 'react'
 import { QuotationPDF } from '@/components/pdf/QuotationPDF'
 import fs from 'fs'
@@ -26,24 +25,32 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (!canRead(session.user.role, 'quotations')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
+  const tenantId = session.user.tenantId
 
-  const quotation = await prisma.quotation.findUnique({
-    where: { id },
-    include: {
-      kaeAssigned: { select: { id: true, name: true, email: true } },
-      lineItems: { orderBy: { sNo: 'asc' } },
-    },
-  })
+  const [quotation, companySetting] = await Promise.all([
+    db.quotation.findFirst({
+      where: { id },
+      include: {
+        kaeAssigned: { select: { id: true, name: true, email: true } },
+        lineItems: { orderBy: { sNo: 'asc' } },
+      },
+    }),
+    db.companySetting.findFirst({ where: { tenantId }, select: { logoDataUrl: true, pdfHeaderDataUrl: true } }).catch(() => null),
+  ])
 
   if (!quotation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Load assets as base64 data URLs (avoids Windows path issues in fontkit)
-  const logoDataUrl       = toDataUrl('dlit-header-full.png', 'image/png')
+  // PDF header priority: pdfHeaderDataUrl (full letterhead) → logoDataUrl → static fallback
+  const logoDataUrl: string | null =
+    (companySetting as any)?.pdfHeaderDataUrl ??
+    (companySetting as any)?.logoDataUrl ??
+    toDataUrl('dlit-header-full.png', 'image/png')
   const arabicHeaderUrl   = null   // no longer needed — combined into logoDataUrl
   const arabicFontNormal  = toDataUrl('Amiri-Regular.ttf','font/truetype')
   const arabicFontBold    = toDataUrl('Amiri-Regular.ttf','font/truetype')
