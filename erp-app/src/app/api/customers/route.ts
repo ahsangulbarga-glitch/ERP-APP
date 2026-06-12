@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { requireTenant } from '@/lib/tenant'
 import { canRead, canWrite, isKAERestrictedToOwnAccounts, canSetCreditLimit } from '@/lib/rbac'
 import { writeAuditLog } from '@/lib/audit'
-import prisma from '@/lib/db'
 
 export async function GET(req: NextRequest) {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (!canRead(session.user.role, 'customers')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
   if (tier) where.priceTier = tier
   if (status) where.status = status
 
-  const rows = await prisma.customer.findMany({
+  const rows = await db.customer.findMany({
     where,
     include: {
       assignedKae: { select: { id: true, name: true } },
@@ -36,8 +36,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (!canWrite(session.user.role, 'customers')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json()
@@ -49,7 +50,7 @@ export async function POST(req: NextRequest) {
     shippingAddresses, defaultCarrier, carrierAccount,
   } = body
 
-  const customer = await prisma.customer.create({
+  const customer = await db.customer.create({
     data: {
       customerName,
       assignedKaeId: assignedKaeId || undefined,
@@ -75,13 +76,14 @@ export async function POST(req: NextRequest) {
     include: { assignedKae: { select: { id: true, name: true } }, assignedKam: { select: { id: true, name: true } } },
   })
 
-  await writeAuditLog({ userId: session.user.id, userRole: session.user.role, targetTable: 'customers', rowId: customer.id, action: 'CREATE', newValue: JSON.stringify(body), relatedId: { type: 'customer', id: customer.id } })
+  await writeAuditLog({ tenantId: session.user.tenantId, userId: session.user.id, userRole: session.user.role, targetTable: 'customers', rowId: customer.id, action: 'CREATE', newValue: JSON.stringify(body), relatedId: { type: 'customer', id: customer.id } })
   return NextResponse.json(customer, { status: 201 })
 }
 
 export async function PATCH(req: NextRequest) {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (!canWrite(session.user.role, 'customers')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id, ...updates } = await req.json()
@@ -92,13 +94,13 @@ export async function PATCH(req: NextRequest) {
   }
 
   if (isKAERestrictedToOwnAccounts(session.user.role)) {
-    const existing = await prisma.customer.findUnique({ where: { id } })
+    const existing = await db.customer.findFirst({ where: { id } })
     if (existing?.assignedKaeId !== session.user.id) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   // Recalculate completion %
   if (updates.totalRfq !== undefined || updates.totalConverted !== undefined) {
-    const current = await prisma.customer.findUnique({ where: { id } })
+    const current = await db.customer.findFirst({ where: { id } })
     const rfq = updates.totalRfq ?? current?.totalRfq ?? 0
     const conv = updates.totalConverted ?? current?.totalConverted ?? 0
     updates.completionPct = rfq > 0 ? (conv / rfq) * 100 : 0
@@ -114,7 +116,13 @@ export async function PATCH(req: NextRequest) {
   if (updates.shippingAddresses && typeof updates.shippingAddresses === 'object')
     updates.shippingAddresses = JSON.stringify(updates.shippingAddresses)
 
-  const updated = await prisma.customer.update({ where: { id }, data: updates, include: { assignedKae: { select: { id: true, name: true } } } })
-  await writeAuditLog({ userId: session.user.id, userRole: session.user.role, targetTable: 'customers', rowId: id, action: 'UPDATE', newValue: JSON.stringify(updates), relatedId: { type: 'customer', id } })
+  let updated
+  try {
+    updated = await db.customer.update({ where: { id }, data: updates, include: { assignedKae: { select: { id: true, name: true } } } })
+  } catch (err) {
+    console.error('[Customer PATCH]', err)
+    return NextResponse.json({ error: `Update failed: ${String(err)}` }, { status: 500 })
+  }
+  await writeAuditLog({ tenantId: session.user.tenantId, userId: session.user.id, userRole: session.user.role, targetTable: 'customers', rowId: id, action: 'UPDATE', newValue: JSON.stringify(updates), relatedId: { type: 'customer', id } })
   return NextResponse.json(updated)
 }

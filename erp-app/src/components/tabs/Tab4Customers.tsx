@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { SessionUser, Customer } from '@/types'
 import { canWrite, canBulkImport, canSetCreditLimit } from '@/lib/rbac'
+import { toastSuccess, toastError } from '@/components/shared/Toast'
 import KPISummaryPanel from '@/components/shared/KPISummaryPanel'
 import {
   Plus, Download, Upload, Users, Pencil, X, Check, Trophy, TrendingUp,
@@ -182,14 +183,16 @@ export default function Tab4Customers({ user, onCreateQuotation }: {
   const saveCreditEdit = async () => {
     if (!creditEdit) return
     setCreditSaving(true)
-    await fetch('/api/customers', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: creditEdit.id, creditLimit: Number(creditEdit.limit), creditBalance: Number(creditEdit.balance) }),
-    })
-    setCreditEdit(null)
-    setCreditSaving(false)
-    load()
+    try {
+      const res = await fetch('/api/customers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: creditEdit.id, creditLimit: Number(creditEdit.limit), creditBalance: Number(creditEdit.balance) }),
+      })
+      if (res.ok) toastSuccess('Credit limit updated')
+      else toastError('Update failed')
+    } catch { toastError('Update failed') }
+    setCreditEdit(null); setCreditSaving(false); load()
   }
 
   const handleSave = async () => {
@@ -211,8 +214,11 @@ export default function Tab4Customers({ user, onCreateQuotation }: {
       priceTier:       form.priceTier,
       discountRate:    Number(form.discountRate),
       paymentTerms:    form.paymentTerms || undefined,
-      creditLimit:     Number(form.creditLimit),
-      creditBalance:   Number(form.creditBalance),
+      // Only send credit fields if this user has permission to change them
+      ...(canSetCreditLimit(user.role) ? {
+        creditLimit:   Number(form.creditLimit)  || 0,
+        creditBalance: Number(form.creditBalance) || 0,
+      } : {}),
       taxId:           form.taxId       || undefined,
       taxExempt:       form.taxExempt,
       currency:        form.currency,
@@ -222,8 +228,12 @@ export default function Tab4Customers({ user, onCreateQuotation }: {
     }
     const method = editRow ? 'PATCH' : 'POST'
     const body   = editRow ? { id: editRow.id, ...payload } : payload
-    await fetch('/api/customers', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-    setShowForm(false); setEditRow(null); setSaving(false); load()
+    try {
+      const res = await fetch('/api/customers', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      if (!res.ok) { const e = await res.json().catch(() => ({})); toastError(e.error || 'Save failed'); setSaving(false); return }
+      toastSuccess(editRow ? 'Customer updated' : 'Customer added')
+      setShowForm(false); setEditRow(null); setSaving(false); load()
+    } catch { toastError('Save failed'); setSaving(false) }
   }
 
   // ── export / import ─────────────────────────────────────────────────────────
