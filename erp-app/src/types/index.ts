@@ -27,23 +27,23 @@ export const ROLE_LABELS: Record<Role, string> = {
   P12_WAREHOUSE_MANAGER:     'Warehouse Manager',
 }
 
-// Approval workflow status for quotations
+// Approval workflow status (shared across quotations and other workflows)
 export type ApprovalStatus =
   | 'Draft'
-  | 'PendingDivMgrReview'
-  | 'PendingSmReview'
+  | 'PendingApproval'
   | 'Approved'
   | 'Submitted'
+  | 'Rejected'
 
 export const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
-  Draft:                'Draft',
-  PendingDivMgrReview:  'Div Mgr Review',
-  PendingSmReview:      'SM Review',
-  Approved:             'Approved',
-  Submitted:            'Submitted',
+  Draft:           'Draft',
+  PendingApproval: 'Pending Review',
+  Approved:        'Approved',
+  Submitted:       'Submitted',
+  Rejected:        'Rejected',
 }
 
-export type FulfilmentType = 'Stock' | 'FactoryOrder'
+export type FulfilmentType = 'Stock' | 'FactoryOrder' | 'Split'
 
 export interface SessionUser {
   id: string
@@ -51,6 +51,28 @@ export interface SessionUser {
   email: string
   role: Role
   sessionId: string
+  tenantId: string          // always present for tenant users
+  tenantSlug: string        // e.g. "syed-contracting"
+  isSuperAdmin?: boolean    // true only for platform super-admins
+}
+
+// ── Tenant ────────────────────────────────────────────────────────────────────
+export type TenantPlan   = 'trial' | 'starter' | 'business' | 'enterprise'
+export type TenantStatus = 'active' | 'suspended' | 'cancelled'
+
+export interface Tenant {
+  id:           string
+  name:         string
+  slug:         string
+  customDomain?: string
+  plan:         TenantPlan
+  status:       TenantStatus
+  trialEndsAt?: string
+  maxUsers:     number
+  createdAt:    string
+  updatedAt:    string
+  // computed
+  userCount?:   number
 }
 
 export type QuotationStatus = 'Open' | 'Lost' | 'Converted' | 'OnHold'
@@ -70,6 +92,7 @@ export interface QuotationLineItem {
   qty: number
   unit?: string
   rate: number
+  discountPct?: number
   amount: number
   delivery?: string
 }
@@ -99,6 +122,7 @@ export interface Quotation {
   notes?: string
   remarks?: string
   approvalStatus?: ApprovalStatus
+  approvalStep?: number
   approvalComments?: string // JSON stringified array
   submittedAt?: string
   lineItems?: QuotationLineItem[]
@@ -216,6 +240,17 @@ export interface User {
 
 export type StockAvailability = 'In Stock' | 'Low Stock' | 'Out of Stock' | 'Reserved'
 
+export interface LinkedSupplierPO {
+  poId: string
+  poNumber: string
+  supplierName: string
+  status: SupplierPOStatus
+  expectedDate?: string | null
+  qtyOrdered: number
+  unit?: string
+  description: string
+}
+
 export interface MaterialItem {
   id: string
   productRef: string
@@ -229,6 +264,450 @@ export interface MaterialItem {
   remarks?: string
   createdAt: string
   updatedAt: string
+  activePOs?: LinkedSupplierPO[]  // active Supplier POs linked to this material
+}
+
+export type SupplierPOStatus  = 'Draft' | 'Sent' | 'Acknowledged' | 'PartialDelivery' | 'Delivered' | 'Cancelled'
+export type DeliveryStatus    = 'Pending' | 'InTransit' | 'Customs' | 'Arrived' | 'Delivered' | 'Delayed'
+
+export interface SupplierPOItem {
+  id: string
+  supplierPOId: string
+  sNo: number
+  description: string          // Title / short summary
+  specifications?: string      // Detailed technical specs (multi-line)
+  productRef?: string
+  qty: number                  // total demand
+  unit?: string
+  unitPrice: number
+  amount: number               // supplier-side spend only
+  qtyFromStock?: number        // portion reserved from inventory (default 0)
+  materialItemId?: string | null
+}
+
+export interface SupplierPO {
+  id: string
+  poNumber: string
+  supplierName: string
+  supplierContact?: string
+  supplierEmail?: string
+  customerPORef?: string
+  qtRef?: string
+  status: SupplierPOStatus
+  expectedDate?: string
+  actualDate?: string
+  totalAmount: number
+  currency: string
+  paymentTerms?: string
+  remarks?: string
+  approvalStatus?: string   // Draft | Pending | Approved | Rejected
+  approvalStep?: number
+  approvalHistory?: string  // JSON array
+  approvedBy?: string
+  approvedAt?: string
+  rejectionNote?: string
+  lineItems?: SupplierPOItem[]
+  deliveries?: Delivery[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DeliveryItem {
+  id: string
+  deliveryId: string
+  sNo: number
+  description: string
+  productRef?: string
+  qty: number
+  unit?: string
+}
+
+export interface Delivery {
+  id: string
+  deliveryRef: string
+  supplierPOId?: string
+  customerPORef?: string
+  supplierName: string
+  carrier?: string
+  trackingNumber?: string
+  origin?: string
+  destination?: string
+  estimatedDate?: string
+  actualDate?: string
+  status: DeliveryStatus
+  remarks?: string
+  approvalStatus?: string   // Draft | Pending | Approved | Rejected
+  approvalStep?: number
+  approvalHistory?: string  // JSON array
+  approvedBy?: string
+  approvedAt?: string
+  rejectionNote?: string
+  items?: DeliveryItem[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type NotificationType     = 'APPROVAL' | 'PAYMENT' | 'DOCUMENT' | 'INVOICE' | 'SYSTEM'
+export type NotificationPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT'
+
+export interface AppNotification {
+  id: string
+  userId: string
+  title: string
+  body: string
+  type: NotificationType
+  priority: NotificationPriority
+  isRead: boolean
+  link?: string
+  entityId?: string
+  createdAt: string
+  readAt?: string
+}
+
+export interface NotificationSetting {
+  id: string
+  userId: string
+  emailEnabled: boolean
+  whatsappEnabled: boolean
+  inAppEnabled: boolean
+  onApproval: boolean
+  onPaymentDue: boolean
+  onDocExpiry: boolean
+  onInvoiceIssued: boolean
+  onNewRfq: boolean
+}
+
+export type InvoiceType   = 'TAX' | 'CREDIT' | 'DEBIT' | 'PROFORMA'
+export type InvoiceStatus = 'Draft' | 'Issued' | 'Paid' | 'Cancelled' | 'Void'
+
+export interface InvoiceLineItem {
+  id: string
+  invoiceId: string
+  sNo: number
+  description: string
+  qty: number
+  unit?: string
+  unitPrice: number
+  amount: number
+  vatRate: number
+  vatAmount: number
+  total: number
+}
+
+export interface Invoice {
+  id: string
+  invoiceNumber: string
+  invoiceType: InvoiceType
+  invoiceDate: string
+  supplyDate?: string
+  customerName: string
+  customerVatNo?: string
+  customerAddress?: string
+  poNumber?: string
+  qtRef?: string
+  subtotal: number
+  vatRate: number
+  vatAmount: number
+  total: number
+  status: InvoiceStatus
+  referenceInvoiceId?: string
+  remarks?: string
+  approvalStatus?: string   // Draft | Pending | Approved | Rejected
+  approvalStep?: number
+  approvalHistory?: string  // JSON array
+  approvedBy?: string
+  approvedAt?: string
+  rejectionNote?: string
+  lineItems?: InvoiceLineItem[]
+  createdAt: string
+  updatedAt: string
+}
+
+// ── HR ──────────────────────────────────────────────────────────────────────
+export type EmployeeStatus   = 'Active' | 'Inactive' | 'OnLeave' | 'Terminated'
+export type ContractType     = 'Permanent' | 'Contract' | 'PartTime'
+export type LeaveType        = 'Annual' | 'Sick' | 'Emergency' | 'Unpaid' | 'Maternity' | 'Paternity'
+export type LeaveStatus      = 'Draft' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
+export type AnnouncementPriority = 'Normal' | 'Important' | 'Urgent'
+
+export interface Employee {
+  id: string
+  employeeId: string
+  name: string
+  email?: string
+  phone?: string
+  department: string
+  jobTitle: string
+  nationality?: string
+  joinDate?: string
+  status: EmployeeStatus
+  contractType: ContractType
+  reportingTo?: string
+  salary?: number
+  emergencyContact?: string
+  remarks?: string
+  leaveRequests?: LeaveRequest[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface LeaveRequest {
+  id: string
+  employeeId: string
+  employee?: { id: string; name: string; employeeId: string; department: string }
+  leaveType: LeaveType
+  fromDate: string
+  toDate: string
+  days: number
+  reason?: string
+  status: LeaveStatus
+  approvalStep?: number
+  approvalHistory?: string  // JSON array
+  approvedBy?: string
+  approvedAt?: string
+  rejectionNote?: string
+  remarks?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Announcement {
+  id: string
+  title: string
+  body: string
+  category: string
+  priority: AnnouncementPriority
+  publishedAt: string
+  expiresAt?: string
+  isActive: boolean
+  createdBy?: string
+  createdAt: string
+  updatedAt: string
+}
+
+// ── Sales Targets ────────────────────────────────────────────────────────────
+export type TargetPeriod = 'monthly' | 'quarterly' | 'yearly'
+export type TargetType   = 'revenue' | 'quotes' | 'conversions'
+
+export interface SalesTarget {
+  id: string
+  userId: string
+  userName: string
+  year: number
+  period: TargetPeriod
+  month?: number | null
+  quarter?: number | null
+  targetType: TargetType
+  targetValue: number
+  createdAt: string
+  updatedAt: string
+  // computed by API
+  actual?: number
+  achievement?: number  // %
+}
+
+
+// ── Settings ──────────────────────────────────────────────────────────────────
+export interface CompanySetting {
+  id: string
+  companyName: string
+  crNumber?: string
+  vatNumber?: string
+  address?: string
+  phone?: string
+  email?: string
+  website?: string
+  defaultVatRate: number
+  currency: string
+  currencySymbol?: string
+  workingDays: string
+  // Tax & Region
+  country?: string
+  taxName?: string
+  taxNumberLabel?: string
+  // Branding
+  logoDataUrl?: string
+  updatedAt: string
+  updatedBy?: string
+}
+
+export interface PublicHoliday {
+  id: string
+  date: string
+  name: string
+  createdAt: string
+}
+
+// ── Commission ────────────────────────────────────────────────────────────────
+export interface CommissionRule {
+  id: string
+  userId: string
+  userName: string
+  rate: number
+  minAmount: number
+  isActive: boolean
+  notes?: string
+  createdAt: string
+  updatedAt: string
+  // computed
+  ytdGross?: number
+  ytdCommission?: number
+}
+
+export interface CommissionPayout {
+  id: string
+  userId: string
+  userName: string
+  period: string
+  grossAmount: number
+  commissionAmt: number
+  status: 'Pending' | 'Approved' | 'Paid'
+  approvedBy?: string
+  approvedAt?: string
+  paidAt?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CommissionEntry {
+  userId: string
+  userName: string
+  period: string
+  grossAmount: number
+  commissionAmt: number
+  rate: number
+  dealCount: number
+  payoutStatus?: string
+  payoutId?: string
+}
+
+// ── Sales Orders ─────────────────────────────────────────────────────────────
+export type SOStatus = 'Draft' | 'Confirmed' | 'Processing' | 'Dispatched' | 'Delivered' | 'Cancelled'
+
+export interface SalesOrderItem {
+  id:           string
+  salesOrderId: string
+  sNo:          number
+  description:  string          // Title / short summary
+  specifications?: string       // Detailed technical specs (multi-line)
+  reference?:   string
+  make?:        string
+  qty:          number
+  unit?:        string
+  unitPrice:    number
+  amount:       number
+  delivery?:    string
+}
+
+export interface SalesOrder {
+  id:             string
+  soNumber:       string
+  soDate:         string
+  customerName:   string
+  poNumber?:      string
+  qtRef?:         string
+  deliveryDate?:  string
+  paymentTerms?:  string
+  deliveryTerms?: string
+  notes?:         string
+  remarks?:       string
+  status:         SOStatus
+  subtotal:       number
+  vatRate:        number
+  vatAmount:      number
+  total:          number
+  approvalStatus?: string
+  approvalStep?:   number
+  approvalHistory?: string
+  approvedBy?:     string
+  approvedAt?:     string
+  rejectionNote?:  string
+  // Customer PO + supporting docs
+  customerPOFile?:     string       // JSON: {name, type, size, data}
+  customerPOFileName?: string
+  attachments?:        string       // JSON array of {name, type, size, data}
+  procurementTriggered?: boolean
+  procurementPoNumber?:  string
+  createdBy?:      string
+  lineItems?:      SalesOrderItem[]
+  createdAt:       string
+  updatedAt:       string
+}
+
+// ── Expenses ──────────────────────────────────────────────────────────────────
+export type ExpenseCategory = 'Travel' | 'Accommodation' | 'Meals' | 'Equipment' | 'Communication' | 'Other'
+export type ExpenseStatus   = 'Draft' | 'Pending' | 'Approved' | 'Rejected' | 'Paid'
+
+export interface ExpenseClaim {
+  id: string
+  claimNumber: string
+  submittedBy: string
+  submitterName: string
+  category: ExpenseCategory
+  description: string
+  amount: number
+  expenseDate: string
+  receiptRef?: string
+  projectRef?: string
+  status: ExpenseStatus
+  approvalStep?: number
+  approvalHistory?: string   // JSON: [{step,role,label,approverName,approvedAt}]
+  approvedBy?: string
+  approvedAt?: string
+  paidAt?: string
+  rejectionNote?: string
+  createdAt: string
+  updatedAt: string
+}
+
+// ── Suppliers ─────────────────────────────────────────────────────────────────
+export type SupplierStatus = 'Active' | 'Inactive' | 'Approved' | 'Blacklisted' | 'Under Review'
+export type SupplierRating = 'Excellent' | 'Good' | 'Average' | 'Poor'
+
+export interface SupplierContact {
+  id: string
+  supplierId: string
+  name: string
+  designation?: string
+  email?: string
+  phone?: string
+  isPrimary: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Supplier {
+  id: string
+  supplierCode: string
+  companyName: string
+  tradeName?: string
+  category: string
+  type: string
+  status: SupplierStatus
+  country: string
+  city?: string
+  address?: string
+  phone?: string
+  email?: string
+  website?: string
+  vatNumber?: string
+  crNumber?: string
+  paymentTerms?: string
+  currency: string
+  creditLimit: number
+  rating?: SupplierRating
+  leadTimeDays?: number
+  notes?: string
+  approvedVendor: boolean
+  approvedBy?: string
+  approvedAt?: string
+  totalPOValue: number
+  totalOrders: number
+  createdBy?: string
+  createdAt: string
+  updatedAt: string
+  contacts?: SupplierContact[]
 }
 
 export interface FilterState {

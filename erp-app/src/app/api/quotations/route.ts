@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSession } from '@/lib/auth'
+import { requireTenant } from '@/lib/tenant'
 import { canRead, canWrite, isKAERestrictedToOwnAccounts } from '@/lib/rbac'
 import { writeAuditLog } from '@/lib/audit'
 import { notifyQuoteStatusChange } from '@/lib/notifications'
-import prisma from '@/lib/db'
 
 export async function GET(req: NextRequest) {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (!canRead(session.user.role, 'quotations')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   if (qtRef) where.qtRef = { contains: qtRef }
   if (status) where.status = status
 
-  const rows = await prisma.quotation.findMany({
+  const rows = await db.quotation.findMany({
     where,
     include: {
       kaeAssigned: { select: { id: true, name: true } },
@@ -39,8 +39,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (!canWrite(session.user.role, 'quotations')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json()
@@ -53,10 +54,10 @@ export async function POST(req: NextRequest) {
 
   if (!qtRef || !qtRef.trim()) return NextResponse.json({ error: 'QT Reference is required' }, { status: 400 })
 
-  const existing = await prisma.quotation.findUnique({ where: { qtRef: qtRef.trim() } })
+  const existing = await db.quotation.findFirst({ where: { qtRef: qtRef.trim() } })
   if (existing) return NextResponse.json({ error: `QT Reference "${qtRef}" already exists` }, { status: 409 })
 
-  const quotation = await prisma.quotation.create({
+  const quotation = await db.quotation.create({
     data: {
       qtRef: qtRef.trim(),
       qtnDate: new Date(qtnDate),
@@ -91,6 +92,7 @@ export async function POST(req: NextRequest) {
             qty: parseFloat(item.qty as unknown as string) || 0,
             unit: item.unit || null,
             rate: parseFloat(item.rate as unknown as string) || 0,
+            discountPct: parseFloat(item.discountPct as unknown as string) || 0,
             amount: parseFloat(item.amount as unknown as string) || 0,
             delivery: item.delivery || null,
           })),
@@ -103,25 +105,26 @@ export async function POST(req: NextRequest) {
     },
   })
 
-  await writeAuditLog({ userId: session.user.id, userRole: session.user.role, targetTable: 'quotations', rowId: quotation.id, action: 'CREATE', newValue: JSON.stringify(body), relatedId: { type: 'quotation', id: quotation.id } })
+  await writeAuditLog({ tenantId: session.user.tenantId, userId: session.user.id, userRole: session.user.role, targetTable: 'quotations', rowId: quotation.id, action: 'CREATE', newValue: JSON.stringify(body), relatedId: { type: 'quotation', id: quotation.id } })
 
   // Auto-update customer lastActivityDate (best-effort)
   if (customerName) {
-    prisma.customer.updateMany({ where: { customerName }, data: { lastActivityDate: new Date() } }).catch(console.error)
+    db.customer.updateMany({ where: { customerName }, data: { lastActivityDate: new Date() } }).catch(console.error)
   }
 
   return NextResponse.json(quotation, { status: 201 })
 }
 
 export async function PATCH(req: NextRequest) {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (!canWrite(session.user.role, 'quotations')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const body = await req.json()
   const { id, lineItems, ...updates } = body
 
-  const existing = await prisma.quotation.findUnique({ where: { id }, include: { kaeAssigned: { select: { id: true, name: true, email: true } } } })
+  const existing = await db.quotation.findFirst({ where: { id }, include: { kaeAssigned: { select: { id: true, name: true, email: true } } } })
   if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   if (isKAERestrictedToOwnAccounts(session.user.role) && existing.kaeAssignedId !== session.user.id) {
@@ -148,7 +151,7 @@ export async function PATCH(req: NextRequest) {
 
   let updated
   try {
-  updated = await prisma.quotation.update({
+  updated = await db.quotation.update({
     where: { id },
     data: {
       ...updates,
@@ -166,6 +169,7 @@ export async function PATCH(req: NextRequest) {
             qty: parseFloat(item.qty as unknown as string) || 0,
             unit: item.unit || null,
             rate: parseFloat(item.rate as unknown as string) || 0,
+            discountPct: parseFloat(item.discountPct as unknown as string) || 0,
             amount: parseFloat(item.amount as unknown as string) || 0,
             delivery: item.delivery || null,
           })),
@@ -187,7 +191,7 @@ export async function PATCH(req: NextRequest) {
   for (const [field, newVal] of Object.entries(updates)) {
     const oldVal = (existing as Record<string, unknown>)[field]
     if (oldVal !== newVal) {
-      await writeAuditLog({ userId: session.user.id, userRole: session.user.role, targetTable: 'quotations', rowId: id, fieldName: field, oldValue: String(oldVal ?? ''), newValue: String(newVal ?? ''), action: 'UPDATE', relatedId: { type: 'quotation', id } })
+      await writeAuditLog({ tenantId: session.user.tenantId, userId: session.user.id, userRole: session.user.role, targetTable: 'quotations', rowId: id, fieldName: field, oldValue: String(oldVal ?? ''), newValue: String(newVal ?? ''), action: 'UPDATE', relatedId: { type: 'quotation', id } })
     }
   }
 
@@ -202,34 +206,35 @@ export async function PATCH(req: NextRequest) {
     const amountEx = Number(existing.amountSar) / 1.15
     const vat = Number(existing.amountSar) - amountEx
 
-    await prisma.pOTracker.create({
+    await db.pOTracker.create({
       data: { customerName: existing.customerName, projectName: existing.projectName, kaeName: existing.kaeAssigned?.name, qtRef: existing.qtRef, poNumber, poDate: new Date(), poAmountExVat: amountEx, vat15: vat, totalValueIncVat: Number(existing.amountSar), paymentStatus: 'Pending', createdBy: session.user.id },
     }).catch(() => { /* PO number might already exist */ })
 
-    await prisma.payment.create({
+    await db.payment.create({
       data: { poNumber, customerName: existing.customerName, kaeNameId: existing.kaeAssignedId, poValue: Number(existing.amountSar), quotationId: existing.id, createdBy: session.user.id },
     }).catch(() => { /* payment might already exist */ })
 
-    await prisma.quotation.update({ where: { id }, data: { poNumber } }).catch(() => {})
+    await db.quotation.update({ where: { id }, data: { poNumber } }).catch(() => {})
   }
 
   // Auto-update customer lastActivityDate (best-effort, don't block response)
   const nameForActivity = updates.customerName || existing.customerName
   if (nameForActivity) {
-    prisma.customer.updateMany({ where: { customerName: nameForActivity }, data: { lastActivityDate: new Date() } }).catch(console.error)
+    db.customer.updateMany({ where: { customerName: nameForActivity }, data: { lastActivityDate: new Date() } }).catch(console.error)
   }
 
   return NextResponse.json(updated)
 }
 
 export async function DELETE(req: NextRequest) {
-  const session = await getSession()
-  if (!session.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const result = await requireTenant()
+  if ('error' in result) return result.error
+  const { db, session } = result
   if (session.user.role !== 'P2_ADMIN' && session.user.role !== 'P1_CEO') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { id } = await req.json()
-  await prisma.quotation.delete({ where: { id } })
-  await writeAuditLog({ userId: session.user.id, userRole: session.user.role, targetTable: 'quotations', rowId: id, action: 'DELETE' })
+  await db.quotation.delete({ where: { id } })
+  await writeAuditLog({ tenantId: session.user.tenantId, userId: session.user.id, userRole: session.user.role, targetTable: 'quotations', rowId: id, action: 'DELETE' })
   return NextResponse.json({ success: true })
 }
 
@@ -244,6 +249,7 @@ interface QuotationLineItemInput {
   qty: number | string
   unit?: string
   rate: number | string
+  discountPct?: number | string
   amount: number | string
   delivery?: string
 }

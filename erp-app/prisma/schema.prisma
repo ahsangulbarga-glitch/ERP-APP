@@ -7,51 +7,71 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id              String    @id @default(cuid())
-  name            String
-  email           String    @unique
-  role            String
-  pinHash         String
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  createdBy       String?
+model Tenant {
+  id           String    @id @default(cuid())
+  name         String
+  slug         String    @unique
+  customDomain String?
+  plan         String    @default("trial")
+  status       String    @default("active")
+  trialEndsAt  DateTime?
+  maxUsers     Int       @default(5)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
 
-  sessions        UserSession[]
-  quotations      Quotation[]        @relation("KAEQuotations")
-  customers       Customer[]         @relation("KAECustomers")
-  managedCustomers Customer[]        @relation("KAMCustomers")
-  payments        Payment[]          @relation("KAEPayments")
-  auditLogs       AuditLog[]
-  adminOverrides  AdminOverrideLog[] @relation("AdminOverrides")
-  targetOverrides AdminOverrideLog[] @relation("TargetOverrides")
+model User {
+  id               String             @id @default(cuid())
+  tenantId         String
+  name             String
+  email            String
+  role             String
+  pinHash          String
+  isActive         Boolean            @default(true)
+  isSuperAdmin     Boolean            @default(false)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  createdBy        String?
+  managerId        String?
+  targetOverrides  AdminOverrideLog[] @relation("TargetOverrides")
+  adminOverrides   AdminOverrideLog[] @relation("AdminOverrides")
+  auditLogs        AuditLog[]
+  managedCustomers Customer[]         @relation("KAMCustomers")
+  customers        Customer[]         @relation("KAECustomers")
+  payments         Payment[]          @relation("KAEPayments")
+  quotations       Quotation[]        @relation("KAEQuotations")
+  manager          User?              @relation("DirectReports", fields: [managerId], references: [id])
+  directReports    User[]             @relation("DirectReports")
+  sessions         UserSession[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
 }
 
 model UserSession {
   id         String    @id @default(cuid())
   userId     String
-  user       User      @relation(fields: [userId], references: [id])
   loginAt    DateTime  @default(now())
   logoutAt   DateTime?
   ipAddress  String?
   deviceType String?
   isActive   Boolean   @default(true)
+  user       User      @relation(fields: [userId], references: [id])
 }
 
 model Quotation {
-  id                   String   @id @default(cuid())
-  qtRef                String   @unique
-  revisionNumber       Int      @default(0)
+  id                   String              @id @default(cuid())
+  tenantId             String
+  qtRef                String
+  revisionNumber       Int                 @default(0)
   qtnDate              DateTime
   customerName         String
   projectName          String
-  amountSar            Float    @default(0)
-  discount             Float    @default(0)
-  status               String   @default("Open")
+  amountSar            Float               @default(0)
+  discount             Float               @default(0)
+  status               String              @default("Open")
   poNumber             String?
   kaeAssignedId        String?
-  kaeAssigned          User?    @relation("KAEQuotations", fields: [kaeAssignedId], references: [id])
   clientContactName    String?
   clientContactDetails String?
   subject              String?
@@ -60,171 +80,192 @@ model Quotation {
   poBox                String?
   paymentTerms         String?
   deliveryWeeks        String?
-  validityDays         Int      @default(30)
+  validityDays         Int                 @default(30)
   notes                String?
   remarks              String?
-  // ── Approval workflow ──────────────────────────────────────────────────────
-  approvalStatus       String   @default("Draft")
-  approvalComments     String?  // JSON: [{ action, role, by, comment, at }]
+  approvalStatus       String              @default("Draft")
+  approvalStep         Int                 @default(1)
+  approvalComments     String?
   submittedAt          DateTime?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
   createdBy            String?
-
+  auditLogs            AuditLog[]          @relation("QuotationAudit")
+  kaeAssigned          User?               @relation("KAEQuotations", fields: [kaeAssignedId], references: [id])
   lineItems            QuotationLineItem[]
-  poTrackers           POTracker[]
-  payments             Payment[]
-  auditLogs            AuditLog[]  @relation("QuotationAudit")
+
+  @@unique([tenantId, qtRef])
+  @@index([tenantId])
 }
 
 model QuotationLineItem {
   id             String    @id @default(cuid())
   quotationId    String
-  quotation      Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
   sNo            Int
   itemType       String    @default("item")
-  description    String                    // item title / short name
-  specifications String?                   // detailed technical specifications
+  description    String
+  specifications String?
   reference      String?
   make           String?
   qty            Float     @default(0)
   unit           String?
   rate           Float     @default(0)
+  discountPct    Float     @default(0)
   amount         Float     @default(0)
   delivery       String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+  quotation      Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
 }
 
 model POTracker {
-  id                   String   @id @default(cuid())
+  id                   String     @id @default(cuid())
+  tenantId             String
   customerName         String
   projectName          String
   kaeName              String?
   qtRef                String?
-  quotation            Quotation? @relation(fields: [qtRef], references: [qtRef])
-  poNumber             String   @unique
+  poNumber             String
   poDate               DateTime
-  poAmountExVat        Float    @default(0)
-  vat15                Float    @default(0)
-  totalValueIncVat     Float    @default(0)
+  poAmountExVat        Float      @default(0)
+  vat15                Float      @default(0)
+  totalValueIncVat     Float      @default(0)
   paymentTermsSplit    String?
-  paymentCollectionPct Float    @default(0)
-  paymentStatus        String   @default("Pending")
-  fulfilmentType       String   @default("FactoryOrder")  // Stock | FactoryOrder
+  paymentCollectionPct Float      @default(0)
+  paymentStatus        String     @default("Pending")
+  fulfilmentType       String     @default("FactoryOrder")
   remarks              String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
   createdBy            String?
-
   auditLogs            AuditLog[] @relation("POAudit")
+
+  @@unique([tenantId, poNumber])
+  @@index([tenantId])
 }
 
 model Customer {
-  id                String    @id @default(cuid())
+  id                String     @id @default(cuid())
+  tenantId          String
   customerName      String
   assignedKaeId     String?
-  assignedKae       User?     @relation("KAECustomers", fields: [assignedKaeId], references: [id])
   assignedKamId     String?
-  assignedKam       User?     @relation("KAMCustomers", fields: [assignedKamId], references: [id])
-  totalRfq          Int       @default(0)
-  totalConverted    Int       @default(0)
-  completionPct     Float     @default(0)
-  totalValueQuoted  Float     @default(0)
-  totalPoValue      Float     @default(0)
+  totalRfq          Int        @default(0)
+  totalConverted    Int        @default(0)
+  completionPct     Float      @default(0)
+  totalValueQuoted  Float      @default(0)
+  totalPoValue      Float      @default(0)
   firstActivityDate DateTime?
   lastActivityDate  DateTime?
   remarks           String?
-  // ── CRM Profile ──────────────────────────────────────────────────────────────
-  status            String    @default("Active")       // Active | Inactive | Prospect
+  status            String     @default("Active")
   industry          String?
   website           String?
   phone             String?
   email             String?
-  primaryAddress    String?   // JSON: { street, city, region, postalCode, country }
-  keyPersonnel      String?   // JSON: [{ name, title, phone, email, isPrimary }]
-  communicationPref String?   // JSON: { preferredChannel, preferredLanguage, doNotCall }
+  primaryAddress    String?
+  keyPersonnel      String?
+  communicationPref String?
   leadSource        String?
-  // ── Billing / Finance ────────────────────────────────────────────────────────
-  priceTier         String    @default("STANDARD")     // STANDARD | SILVER | GOLD | PLATINUM
-  discountRate      Float     @default(0)
+  priceTier         String     @default("STANDARD")
+  discountRate      Float      @default(0)
   paymentTerms      String?
-  creditLimit       Float     @default(0)
-  creditBalance     Float     @default(0)              // outstanding balance
+  creditLimit       Float      @default(0)
+  creditBalance     Float      @default(0)
   taxId             String?
-  taxExempt         Boolean   @default(false)
-  currency          String    @default("SAR")
-  // ── Shipping / Logistics ─────────────────────────────────────────────────────
-  shippingAddresses String?   // JSON: [{ label, street, city, region, postalCode, country, isDefault }]
+  taxExempt         Boolean    @default(false)
+  currency          String     @default("SAR")
+  shippingAddresses String?
   defaultCarrier    String?
   carrierAccount    String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
   createdBy         String?
-
   auditLogs         AuditLog[] @relation("CustomerAudit")
+  assignedKam       User?      @relation("KAMCustomers", fields: [assignedKamId], references: [id])
+  assignedKae       User?      @relation("KAECustomers", fields: [assignedKaeId], references: [id])
+
+  @@index([tenantId])
 }
 
 model Payment {
-  id             String     @id @default(cuid())
-  poNumber       String
-  customerName   String
-  kaeNameId      String?
-  kaeName        User?      @relation("KAEPayments", fields: [kaeNameId], references: [id])
-  poValue        Float      @default(0)
-  collectionPct  Float      @default(0)
-  remarks        String?
-  quotationId    String?
-  quotation      Quotation? @relation(fields: [quotationId], references: [id])
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
-  createdBy      String?
+  id            String             @id @default(cuid())
+  tenantId      String
+  poNumber      String
+  customerName  String
+  kaeNameId     String?
+  poValue       Float              @default(0)
+  collectionPct Float              @default(0)
+  remarks       String?
+  quotationId   String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  createdBy     String?
+  auditLogs     AuditLog[]         @relation("PaymentAudit")
+  kaeName       User?              @relation("KAEPayments", fields: [kaeNameId], references: [id])
+  milestones    PaymentMilestone[]
 
-  milestones     PaymentMilestone[]
-  auditLogs      AuditLog[]         @relation("PaymentAudit")
+  @@index([tenantId])
 }
 
 model PaymentMilestone {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   paymentId  String
-  payment    Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   phaseName  String
-  percentage Float    @default(0)
-  amountSar  Float    @default(0)
+  percentage Float     @default(0)
+  amountSar  Float     @default(0)
   dueDate    DateTime
-  status     String   @default("Pending")
+  status     String    @default("Pending")
   paidAt     DateTime?
-  alertSent  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  alertSent  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  payment    Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 }
 
 model Document {
-  id                    String   @id @default(cuid())
-  documentName          String
-  documentOwner         String
-  category              String
-  department            String
-  issueDate             DateTime
-  expiryDate            DateTime
-  remainingDaysForExpiry Int     @default(0)
-  status                String   @default("Active")
-  remarks               String?
-  alert30Sent           Boolean  @default(false)
-  alert15Sent           Boolean  @default(false)
-  alert7Sent            Boolean  @default(false)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  createdBy             String?
+  id                     String     @id @default(cuid())
+  tenantId               String
+  documentName           String
+  documentOwner          String
+  category               String
+  department             String
+  issueDate              DateTime
+  expiryDate             DateTime
+  remainingDaysForExpiry Int        @default(0)
+  status                 String     @default("Active")
+  remarks                String?
+  alert30Sent            Boolean    @default(false)
+  alert15Sent            Boolean    @default(false)
+  alert7Sent             Boolean    @default(false)
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+  createdBy              String?
+  auditLogs              AuditLog[] @relation("DocumentAudit")
 
-  auditLogs             AuditLog[] @relation("DocumentAudit")
+  @@index([tenantId])
+}
+
+model ApprovalWorkflow {
+  id           String   @id @default(cuid())
+  tenantId     String
+  process      String
+  stepOrder    Int
+  label        String
+  approverRole String?
+  approverId   String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([tenantId, process])
 }
 
 model AuditLog {
   id          String     @id @default(cuid())
+  tenantId    String
   timestamp   DateTime   @default(now())
   userId      String?
-  user        User?      @relation(fields: [userId], references: [id])
   userRole    String?
   targetTable String
   rowId       String
@@ -233,78 +274,560 @@ model AuditLog {
   newValue    String?
   action      String
   quotationId String?
-  quotation   Quotation? @relation("QuotationAudit", fields: [quotationId], references: [id])
   poId        String?
-  po          POTracker? @relation("POAudit", fields: [poId], references: [id])
   customerId  String?
-  customer    Customer?  @relation("CustomerAudit", fields: [customerId], references: [id])
   paymentId   String?
-  payment     Payment?   @relation("PaymentAudit", fields: [paymentId], references: [id])
   documentId  String?
   document    Document?  @relation("DocumentAudit", fields: [documentId], references: [id])
+  payment     Payment?   @relation("PaymentAudit", fields: [paymentId], references: [id])
+  customer    Customer?  @relation("CustomerAudit", fields: [customerId], references: [id])
+  po          POTracker? @relation("POAudit", fields: [poId], references: [id])
+  quotation   Quotation? @relation("QuotationAudit", fields: [quotationId], references: [id])
+  user        User?      @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+}
+
+model AdminOverrideLog {
+  id           String   @id @default(cuid())
+  tenantId     String
+  timestamp    DateTime @default(now())
+  adminId      String
+  targetUserId String?
+  actionType   String
+  reason       String?
+  severity     String   @default("HIGH")
+  targetUser   User?    @relation("TargetOverrides", fields: [targetUserId], references: [id])
+  admin        User     @relation("AdminOverrides", fields: [adminId], references: [id])
+
+  @@index([tenantId])
 }
 
 model MaterialItem {
-  id               String   @id @default(cuid())
-  productRef       String   @unique
-  description      String                          // item title / short name
-  specifications   String?                         // detailed technical specifications
-  stockAvailability String  @default("In Stock")  // In Stock | Low Stock | Out of Stock | Reserved
-  quantity         Int      @default(0)
-  reservedQty      Int      @default(0)           // units reserved (subset of quantity)
-  reservedForPO    String?                         // PO number this reservation is against
-  orderToFactory   Boolean  @default(false)
-  unitCost         Float    @default(0)            // standard/weighted-average cost per unit (SAR)
-  remarks          String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  createdBy        String?
+  id                String                 @id @default(cuid())
+  tenantId          String
+  productRef        String
+  description       String
+  specifications    String?
+  stockAvailability String                 @default("In Stock")
+  quantity          Int                    @default(0)
+  reservedQty       Int                    @default(0)
+  reservedForPO     String?
+  orderToFactory    Boolean                @default(false)
+  unitCost          Float                  @default(0)
+  remarks           String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  createdBy         String?
+  lots              InventoryLot[]
+  transactions      InventoryTransaction[]
 
-  transactions     InventoryTransaction[]
-  lots             InventoryLot[]
+  @@unique([tenantId, productRef])
+  @@index([tenantId])
 }
 
 model InventoryTransaction {
   id              String       @id @default(cuid())
   materialItemId  String
-  materialItem    MaterialItem @relation(fields: [materialItemId], references: [id], onDelete: Cascade)
-  type            String       // RECEIPT | ISSUE | ADJUSTMENT
-  quantity        Float        // positive = stock in, negative = stock out
+  type            String
+  quantity        Float
   unitCost        Float        @default(0)
   reference       String?
   notes           String?
   transactionDate DateTime     @default(now())
   createdAt       DateTime     @default(now())
   createdBy       String?
+  materialItem    MaterialItem @relation(fields: [materialItemId], references: [id], onDelete: Cascade)
 }
 
 model InventoryLot {
   id             String       @id @default(cuid())
   materialItemId String
-  materialItem   MaterialItem @relation(fields: [materialItemId], references: [id], onDelete: Cascade)
   lotDate        DateTime     @default(now())
   initialQty     Float        @default(0)
   remainingQty   Float        @default(0)
   unitCost       Float        @default(0)
   reference      String?
   createdAt      DateTime     @default(now())
+  materialItem   MaterialItem @relation(fields: [materialItemId], references: [id], onDelete: Cascade)
 }
 
 model StockValuationConfig {
-  id        String   @id @default("singleton")
-  method    String   @default("WEIGHTED_AVERAGE") // FIFO | LIFO | WEIGHTED_AVERAGE
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  method    String   @default("WEIGHTED_AVERAGE")
   updatedAt DateTime @updatedAt
   updatedBy String?
 }
 
-model AdminOverrideLog {
-  id           String   @id @default(cuid())
-  timestamp    DateTime @default(now())
-  adminId      String
-  admin        User     @relation("AdminOverrides", fields: [adminId], references: [id])
-  targetUserId String?
-  targetUser   User?    @relation("TargetOverrides", fields: [targetUserId], references: [id])
-  actionType   String
-  reason       String?
-  severity     String   @default("HIGH")
+model SupplierPO {
+  id              String           @id @default(cuid())
+  tenantId        String
+  poNumber        String
+  supplierName    String
+  supplierContact String?
+  supplierEmail   String?
+  customerPORef   String?
+  qtRef           String?
+  status          String           @default("Draft")
+  expectedDate    DateTime?
+  actualDate      DateTime?
+  totalAmount     Float            @default(0)
+  currency        String           @default("SAR")
+  paymentTerms    String?
+  remarks         String?
+  approvalStatus  String           @default("Draft")
+  approvalStep    Int              @default(1)
+  approvalHistory String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionNote   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  createdBy       String?
+  deliveries      Delivery[]
+  lineItems       SupplierPOItem[]
+
+  @@unique([tenantId, poNumber])
+  @@index([tenantId])
+}
+
+model SupplierPOItem {
+  id            String    @id @default(cuid())
+  supplierPOId  String
+  sNo           Int       @default(1)
+  description   String                    // Title / short summary
+  specifications String?                  // Detailed technical specs (multi-line)
+  productRef    String?
+  qty          Float      @default(0)       // total demand
+  unit         String?
+  unitPrice    Float      @default(0)
+  amount       Float      @default(0)       // qtyFromSupplier × unitPrice (supplier-side spend)
+  // ── Stock / Supplier split ─────────────────────────────────────────────────
+  qtyFromStock    Float    @default(0)      // portion reserved from existing stock
+  materialItemId  String?                   // matched MaterialItem when productRef is known
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  supplierPO   SupplierPO @relation(fields: [supplierPOId], references: [id], onDelete: Cascade)
+}
+
+model Delivery {
+  id              String         @id @default(cuid())
+  tenantId        String
+  deliveryRef     String
+  supplierPOId    String?
+  customerPORef   String?
+  supplierName    String
+  carrier         String?
+  trackingNumber  String?
+  origin          String?
+  destination     String?
+  estimatedDate   DateTime?
+  actualDate      DateTime?
+  status          String         @default("Pending")
+  remarks         String?
+  approvalStatus  String         @default("Draft")
+  approvalStep    Int            @default(1)
+  approvalHistory String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionNote   String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  createdBy       String?
+  supplierPO      SupplierPO?    @relation(fields: [supplierPOId], references: [id])
+  items           DeliveryItem[]
+
+  @@unique([tenantId, deliveryRef])
+  @@index([tenantId])
+}
+
+model DeliveryItem {
+  id          String   @id @default(cuid())
+  deliveryId  String
+  sNo         Int      @default(1)
+  description String
+  productRef  String?
+  qty         Float    @default(0)
+  unit        String?
+  createdAt   DateTime @default(now())
+  delivery    Delivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  tenantId  String
+  userId    String
+  title     String
+  body      String
+  type      String    @default("SYSTEM")
+  priority  String    @default("NORMAL")
+  isRead    Boolean   @default(false)
+  link      String?
+  entityId  String?
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  @@index([tenantId])
+  @@index([tenantId, userId])
+}
+
+model NotificationSetting {
+  id              String   @id @default(cuid())
+  tenantId        String
+  userId          String
+  emailEnabled    Boolean  @default(false)
+  whatsappEnabled Boolean  @default(false)
+  inAppEnabled    Boolean  @default(true)
+  onApproval      Boolean  @default(true)
+  onPaymentDue    Boolean  @default(true)
+  onDocExpiry     Boolean  @default(true)
+  onInvoiceIssued Boolean  @default(true)
+  onNewRfq        Boolean  @default(true)
+  updatedAt       DateTime @updatedAt
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+}
+
+model Invoice {
+  id                 String            @id @default(cuid())
+  tenantId           String
+  invoiceNumber      String
+  invoiceType        String            @default("TAX")
+  invoiceDate        DateTime          @default(now())
+  supplyDate         DateTime?
+  customerName       String
+  customerVatNo      String?
+  customerAddress    String?
+  poNumber           String?
+  qtRef              String?
+  subtotal           Float             @default(0)
+  vatRate            Float             @default(15)
+  vatAmount          Float             @default(0)
+  total              Float             @default(0)
+  status             String            @default("Draft")
+  referenceInvoiceId String?
+  remarks            String?
+  approvalStatus     String            @default("Draft")
+  approvalStep       Int               @default(1)
+  approvalHistory    String?
+  approvedBy         String?
+  approvedAt         DateTime?
+  rejectionNote      String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  createdBy          String?
+  referenceInvoice   Invoice?          @relation("CreditDebitRef", fields: [referenceInvoiceId], references: [id])
+  creditDebitNotes   Invoice[]         @relation("CreditDebitRef")
+  lineItems          InvoiceLineItem[]
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId])
+}
+
+model InvoiceLineItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  sNo         Int      @default(1)
+  description String
+  qty         Float    @default(1)
+  unit        String?
+  unitPrice   Float    @default(0)
+  amount      Float    @default(0)
+  vatRate     Float    @default(15)
+  vatAmount   Float    @default(0)
+  total       Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Employee {
+  id               String         @id @default(cuid())
+  tenantId         String
+  employeeId       String
+  name             String
+  email            String?
+  phone            String?
+  department       String
+  jobTitle         String
+  nationality      String?
+  joinDate         DateTime?
+  status           String         @default("Active")
+  contractType     String         @default("Permanent")
+  reportingTo      String?
+  salary           Float?
+  emergencyContact String?
+  remarks          String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  createdBy        String?
+  leaveRequests    LeaveRequest[]
+
+  @@unique([tenantId, employeeId])
+  @@index([tenantId])
+}
+
+model LeaveRequest {
+  id              String    @id @default(cuid())
+  employeeId      String
+  leaveType       String    @default("Annual")
+  fromDate        DateTime
+  toDate          DateTime
+  days            Float     @default(1)
+  reason          String?
+  status          String    @default("Pending")
+  approvalStep    Int       @default(1)
+  approvalHistory String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionNote   String?
+  remarks         String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String?
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model Announcement {
+  id          String    @id @default(cuid())
+  tenantId    String
+  title       String
+  body        String
+  category    String    @default("General")
+  priority    String    @default("Normal")
+  publishedAt DateTime  @default(now())
+  expiresAt   DateTime?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String?
+
+  @@index([tenantId])
+}
+
+model SalesTarget {
+  id          String   @id @default(cuid())
+  tenantId    String
+  userId      String
+  userName    String
+  year        Int
+  period      String   @default("monthly")
+  month       Int?
+  quarter     Int?
+  targetType  String   @default("revenue")
+  targetValue Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+
+  @@unique([tenantId, userId, year, period, month, quarter, targetType])
+  @@index([tenantId])
+}
+
+model CompanySetting {
+  id               String   @id @default(cuid())
+  tenantId         String   @unique
+  companyName      String   @default("My Company")
+  crNumber         String?
+  vatNumber        String?
+  address          String?
+  phone            String?
+  email            String?
+  website          String?
+  defaultVatRate   Float    @default(15)
+  currency         String   @default("SAR")
+  currencySymbol   String   @default("SAR")
+  workingDays      String   @default("0,1,2,3,4")
+  // ── Tax & Region ─────────────────────────────────────────────────────────────
+  country          String   @default("Saudi Arabia")
+  taxName          String   @default("VAT")            // e.g. "VAT", "GST", "Sales Tax"
+  taxNumberLabel   String   @default("VAT Number")     // e.g. "TRN", "GST No.", "EIN"
+  // ── Branding ─────────────────────────────────────────────────────────────────
+  logoDataUrl      String?                              // base64 data-URL of company logo
+  updatedAt        DateTime @updatedAt
+  updatedBy        String?
+}
+
+model PublicHoliday {
+  id        String   @id @default(cuid())
+  tenantId  String
+  date      DateTime
+  name      String
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+}
+
+model CommissionRule {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  userName  String
+  rate      Float    @default(0)
+  minAmount Float    @default(0)
+  isActive  Boolean  @default(true)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+}
+
+model CommissionPayout {
+  id            String    @id @default(cuid())
+  tenantId      String
+  userId        String
+  userName      String
+  period        String
+  grossAmount   Float     @default(0)
+  commissionAmt Float     @default(0)
+  status        String    @default("Pending")
+  approvedBy    String?
+  approvedAt    DateTime?
+  paidAt        DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String?
+
+  @@unique([tenantId, userId, period])
+  @@index([tenantId])
+}
+
+model ExpenseClaim {
+  id              String    @id @default(cuid())
+  tenantId        String
+  claimNumber     String
+  submittedBy     String
+  submitterName   String
+  category        String    @default("Other")
+  description     String
+  amount          Float     @default(0)
+  expenseDate     DateTime
+  receiptRef      String?
+  projectRef      String?
+  receiptFile     String?                              // base64 JSON of uploaded invoice/receipt copy
+  status          String    @default("Pending")
+  approvalStep    Int       @default(1)
+  approvalHistory String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  paidAt          DateTime?
+  rejectionNote   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([tenantId, claimNumber])
+  @@index([tenantId])
+}
+
+model SalesOrder {
+  id              String           @id @default(cuid())
+  tenantId        String
+  soNumber        String
+  soDate          DateTime         @default(now())
+  customerName    String
+  poNumber        String?
+  qtRef           String?
+  deliveryDate    DateTime?
+  paymentTerms    String?
+  deliveryTerms   String?
+  notes           String?
+  remarks         String?
+  status          String           @default("Draft")
+  subtotal        Float            @default(0)
+  vatRate         Float            @default(15)
+  vatAmount       Float            @default(0)
+  total           Float            @default(0)
+  approvalStatus  String           @default("Draft")
+  approvalStep    Int              @default(1)
+  approvalHistory String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectionNote   String?
+  // ── Customer PO & supporting documents ──────────────────────────────────────
+  customerPOFile      String?      // JSON: {name, type, size, data} for the customer PO scan/PDF
+  customerPOFileName  String?      // Convenience: file name for display
+  attachments         String?      // JSON array of {name, type, size, data} — supporting docs
+  procurementTriggered  Boolean    @default(false)  // true once SO approval has notified Procurement
+  procurementPoNumber   String?    // the auto-seeded Supplier PO number
+  createdBy       String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  lineItems       SalesOrderItem[]
+
+  @@unique([tenantId, soNumber])
+  @@index([tenantId])
+}
+
+model SalesOrderItem {
+  id            String    @id @default(cuid())
+  salesOrderId  String
+  sNo           Int       @default(1)
+  description   String    // Title / short summary
+  specifications String?  // Detailed technical specs (multi-line)
+  reference     String?
+  make          String?
+  qty          Float      @default(1)
+  unit         String?
+  unitPrice    Float      @default(0)
+  amount       Float      @default(0)
+  delivery     String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  salesOrder   SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+}
+
+model Supplier {
+  id             String            @id @default(cuid())
+  tenantId       String
+  supplierCode   String
+  companyName    String
+  tradeName      String?
+  category       String            @default("General")
+  type           String            @default("Supplier")
+  status         String            @default("Active")
+  country        String            @default("Saudi Arabia")
+  city           String?
+  address        String?
+  phone          String?
+  email          String?
+  website        String?
+  vatNumber      String?
+  crNumber       String?
+  paymentTerms   String?
+  currency       String            @default("SAR")
+  creditLimit    Float             @default(0)
+  rating         String?
+  leadTimeDays   Int?
+  notes          String?
+  approvedVendor Boolean           @default(false)
+  approvedBy     String?
+  approvedAt     DateTime?
+  totalPOValue   Float             @default(0)
+  totalOrders    Int               @default(0)
+  createdBy      String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  contacts       SupplierContact[]
+
+  @@unique([tenantId, supplierCode])
+  @@index([tenantId])
+}
+
+model SupplierContact {
+  id          String   @id @default(cuid())
+  supplierId  String
+  name        String
+  designation String?
+  email       String?
+  phone       String?
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
 }
