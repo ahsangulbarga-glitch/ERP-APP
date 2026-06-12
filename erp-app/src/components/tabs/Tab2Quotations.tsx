@@ -58,7 +58,7 @@ const blankHeader = (): Omit<QuotationLineItem, 'id' | 'quotationId'> => ({
 
 const blankForm = () => ({
   qtRef: '', qtnDate: '', customerName: '', projectName: '', amountSar: '',
-  discount: '0', discountType: 'SAR', status: 'Open', kaeAssignedId: '', clientContactName: '',
+  discount: '0', discountType: 'SAR', hideDiscount: false, status: 'Open', kaeAssignedId: '', clientContactName: '',
   clientContactDetails: '', remarks: '', poNumber: '',
   subject: '', rfqCode: '', application: '', poBox: '',
   paymentTerms: '100% advance', deliveryWeeks: '', validityDays: '30',
@@ -296,6 +296,7 @@ export default function Tab2Quotations({
       customerName: row.customerName, projectName: row.projectName,
       amountSar: String(row.amountSar), discount: String(row.discount ?? 0),
       discountType: row.discountType || 'SAR',
+      hideDiscount: row.hideDiscount ?? false,
       status: row.status, kaeAssignedId: row.kaeAssignedId || '',
       clientContactName: row.clientContactName || '',
       clientContactDetails: row.clientContactDetails || '',
@@ -958,6 +959,24 @@ export default function Tab2Quotations({
                                 })}
                               </div>
                             )}
+
+                            {/* ── Row quick-actions ─────────────────────────── */}
+                            <div className="flex items-center gap-2 pt-1">
+                              {canWrite(user.role, 'quotations') && (
+                                <button onClick={() => openRevise(row)}
+                                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all hover:opacity-80"
+                                  style={{ background: '#fffbeb', color: '#b45309', borderColor: '#fde68a' }}>
+                                  <GitBranch size={12} /> Create Revision
+                                </button>
+                              )}
+                              {canWrite(user.role, 'quotations') && (
+                                <button onClick={() => openEdit(row)}
+                                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all hover:opacity-80"
+                                  style={{ background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe' }}>
+                                  <Pencil size={12} /> Edit Quotation
+                                </button>
+                              )}
+                            </div>
 
                             {/* Notes / Payment terms */}
                             {(row.notes || row.paymentTerms || row.deliveryWeeks || row.validityDays) && (
@@ -1727,6 +1746,18 @@ export default function Tab2Quotations({
                                 = SAR {discountAmount.toLocaleString('en-SA', { maximumFractionDigits: 0 })}
                               </span>
                             )}
+                            {/* Hide discount from customer toggle */}
+                            <button type="button"
+                              onClick={() => setForm(f => ({ ...f, hideDiscount: !f.hideDiscount }))}
+                              title={form.hideDiscount ? 'Discount hidden from customer PDF' : 'Discount visible in customer PDF'}
+                              style={{
+                                fontSize: 10, padding: '2px 7px', borderRadius: 4, fontWeight: 600, cursor: 'pointer',
+                                background: form.hideDiscount ? '#fef2f2' : '#f0fdf4',
+                                color: form.hideDiscount ? '#b91c1c' : '#15803d',
+                                border: `1px solid ${form.hideDiscount ? '#fecaca' : '#bbf7d0'}`,
+                              }}>
+                              {form.hideDiscount ? '🙈 Hidden' : '👁 Visible'}
+                            </button>
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-8 text-xs font-bold border-t pt-1" style={{ borderColor: '#e2e8f0' }}>

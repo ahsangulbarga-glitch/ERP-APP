@@ -289,6 +289,7 @@ export interface QuotationForPDF {
   tpiNote?: string | null
   pricesNote?: string | null
   discountType?: string | null
+  hideDiscount?: boolean | null
   notes?: string | null
   remarks?: string | null
   clientContactName?: string | null
@@ -587,18 +588,18 @@ function ItemsPage({
         )}
       </View>
 
-      {/* Totals */}
+      {/* Totals — hideDiscount collapses discount row so customer sees net price only */}
       <View style={s.totalsWrap}>
         <View style={s.totalsBox}>
-          {discount > 0 ? (
+          {discount > 0 && !q.hideDiscount ? (
             <>
               <View style={s.totRowFirst}>
-                <Text style={s.totLabel}>GRAND TOTAL</Text>
+                <Text style={s.totLabel}>SUB-TOTAL</Text>
                 <Text style={s.totValue}>{fmtNum(subtotal)}</Text>
               </View>
               <View style={s.totRow}>
                 <Text style={s.totLabel}>SPECIAL DISCOUNT</Text>
-                <Text style={s.totValue}>{fmtNum(discount)}</Text>
+                <Text style={s.totValue}>- {fmtNum(discount)}</Text>
               </View>
               <View style={s.totRow}>
                 <Text style={s.totLabel}>GRAND TOTAL</Text>
@@ -608,7 +609,7 @@ function ItemsPage({
           ) : (
             <View style={s.totRowFirst}>
               <Text style={s.totLabel}>TOTAL</Text>
-              <Text style={s.totValue}>{fmtNum(subtotal)}</Text>
+              <Text style={s.totValue}>{fmtNum(net)}</Text>
             </View>
           )}
         </View>
@@ -656,7 +657,10 @@ export function QuotationPDF({
 }) {
   const items    = q.lineItems.filter(li => li.itemType !== 'header')
   const subtotal = items.reduce((sum, li) => sum + Number(li.amount), 0) || Number(q.amountSar)
-  const discount = Number(q.discount) || 0
+  const discountRaw = Number(q.discount) || 0
+  const discount = q.discountType === 'PCT'
+    ? subtotal * (discountRaw / 100)
+    : discountRaw
   const net      = subtotal - discount
 
   return (

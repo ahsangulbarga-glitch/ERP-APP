@@ -107,6 +107,7 @@ export interface Quotation {
   amountSar: number
   discount: number
   discountType?: string   // 'SAR' | 'PCT'
+  hideDiscount?: boolean
   status: QuotationStatus
   poNumber?: string
   kaeAssignedId?: string

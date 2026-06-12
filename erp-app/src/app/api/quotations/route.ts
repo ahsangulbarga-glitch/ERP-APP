@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const {
-    qtRef, qtnDate, customerName, projectName, amountSar, discount, discountType, status,
+    qtRef, qtnDate, customerName, projectName, amountSar, discount, discountType, hideDiscount, status,
     kaeAssignedId, clientContactName, clientContactDetails, remarks, poNumber,
     subject, rfqCode, application, poBox, paymentTerms, deliveryWeeks, validityDays,
     termsOfDelivery, warranty, tpiNote, pricesNote, notes,
@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
       amountSar: parseFloat(amountSar) || 0,
       discount: parseFloat(discount) || 0,
       discountType: discountType || 'SAR',
+      hideDiscount: hideDiscount ?? false,
       status: status || 'Open',
       poNumber: poNumber || undefined,
       kaeAssignedId: kaeAssignedId || undefined,

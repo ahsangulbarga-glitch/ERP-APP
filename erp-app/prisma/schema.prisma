@@ -70,6 +70,7 @@ model Quotation {
   amountSar            Float               @default(0)
   discount             Float               @default(0)
   discountType         String              @default("SAR")
+  hideDiscount         Boolean             @default(false)
   status               String              @default("Open")
   poNumber             String?
   kaeAssignedId        String?
