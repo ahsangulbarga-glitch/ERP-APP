@@ -106,6 +106,7 @@ export interface Quotation {
   projectName: string
   amountSar: number
   discount: number
+  discountType?: string   // 'SAR' | 'PCT'
   status: QuotationStatus
   poNumber?: string
   kaeAssignedId?: string
@@ -119,6 +120,10 @@ export interface Quotation {
   paymentTerms?: string
   deliveryWeeks?: string
   validityDays?: number
+  termsOfDelivery?: string
+  warranty?: string
+  tpiNote?: string
+  pricesNote?: string
   notes?: string
   remarks?: string
   approvalStatus?: ApprovalStatus

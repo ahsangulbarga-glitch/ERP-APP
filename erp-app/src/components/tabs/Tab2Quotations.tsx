@@ -58,10 +58,15 @@ const blankHeader = (): Omit<QuotationLineItem, 'id' | 'quotationId'> => ({
 
 const blankForm = () => ({
   qtRef: '', qtnDate: '', customerName: '', projectName: '', amountSar: '',
-  discount: '0', status: 'Open', kaeAssignedId: '', clientContactName: '',
+  discount: '0', discountType: 'SAR', status: 'Open', kaeAssignedId: '', clientContactName: '',
   clientContactDetails: '', remarks: '', poNumber: '',
   subject: '', rfqCode: '', application: '', poBox: '',
-  paymentTerms: '', deliveryWeeks: '', validityDays: '30', notes: '',
+  paymentTerms: '100% advance', deliveryWeeks: '', validityDays: '30',
+  termsOfDelivery: 'DDP, Delivered to Site',
+  warranty: '12 months from date of supply',
+  tpiNote: 'Inclusive of FAT/SAT; any TPI will be charged on request.',
+  pricesNote: 'Quoted prices are excluding VAT',
+  notes: '',
 })
 
 // ─── revision grouping helpers ────────────────────────────────────────────────
@@ -290,14 +295,20 @@ export default function Tab2Quotations({
       qtRef: row.qtRef, qtnDate: row.qtnDate.split('T')[0],
       customerName: row.customerName, projectName: row.projectName,
       amountSar: String(row.amountSar), discount: String(row.discount ?? 0),
+      discountType: row.discountType || 'SAR',
       status: row.status, kaeAssignedId: row.kaeAssignedId || '',
       clientContactName: row.clientContactName || '',
       clientContactDetails: row.clientContactDetails || '',
       remarks: row.remarks || '', poNumber: row.poNumber || '',
       subject: row.subject || '', rfqCode: row.rfqCode || '',
       application: row.application || '', poBox: row.poBox || '',
-      paymentTerms: row.paymentTerms || '', deliveryWeeks: row.deliveryWeeks || '',
-      validityDays: String(row.validityDays ?? 30), notes: row.notes || '',
+      paymentTerms: row.paymentTerms || '100% advance', deliveryWeeks: row.deliveryWeeks || '',
+      validityDays: String(row.validityDays ?? 30),
+      termsOfDelivery: row.termsOfDelivery || 'DDP, Delivered to Site',
+      warranty: row.warranty || '12 months from date of supply',
+      tpiNote: row.tpiNote || 'Inclusive of FAT/SAT; any TPI will be charged on request.',
+      pricesNote: row.pricesNote || 'Quoted prices are excluding VAT',
+      notes: row.notes || '',
     })
     try {
       const res = await fetch(`/api/quotations?qtRef=${encodeURIComponent(row.qtRef)}&withItems=1`)
@@ -327,14 +338,20 @@ export default function Tab2Quotations({
       qtnDate: new Date().toISOString().split('T')[0],
       customerName: row.customerName, projectName: row.projectName,
       amountSar: String(row.amountSar), discount: String(row.discount ?? 0),
+      discountType: row.discountType || 'SAR',
       status: 'Open', kaeAssignedId: row.kaeAssignedId || '',
       clientContactName: row.clientContactName || '',
       clientContactDetails: row.clientContactDetails || '',
       remarks: row.remarks || '', poNumber: '',
       subject: row.subject || '', rfqCode: row.rfqCode || '',
       application: row.application || '', poBox: row.poBox || '',
-      paymentTerms: row.paymentTerms || '', deliveryWeeks: row.deliveryWeeks || '',
-      validityDays: String(row.validityDays ?? 30), notes: row.notes || '',
+      paymentTerms: row.paymentTerms || '100% advance', deliveryWeeks: row.deliveryWeeks || '',
+      validityDays: String(row.validityDays ?? 30),
+      termsOfDelivery: row.termsOfDelivery || 'DDP, Delivered to Site',
+      warranty: row.warranty || '12 months from date of supply',
+      tpiNote: row.tpiNote || 'Inclusive of FAT/SAT; any TPI will be charged on request.',
+      pricesNote: row.pricesNote || 'Quoted prices are excluding VAT',
+      notes: row.notes || '',
     })
     try {
       const res = await fetch(`/api/quotations?qtRef=${encodeURIComponent(row.qtRef)}&withItems=1`)
@@ -397,15 +414,18 @@ export default function Tab2Quotations({
   })()
 
   // ── totals ──────────────────────────────────────────────────────────────────
-  const itemsSubtotal = lineItems.reduce((s, li) => s + Number(li.amount), 0)
-  const discountVal   = parseFloat(form.discount) || 0
-  const netTotal      = itemsSubtotal - discountVal
+  const itemsSubtotal  = lineItems.reduce((s, li) => s + Number(li.amount), 0)
+  const discountVal    = parseFloat(form.discount) || 0
+  const discountAmount = form.discountType === 'PCT'
+    ? itemsSubtotal * (discountVal / 100)
+    : discountVal
+  const netTotal = itemsSubtotal - discountAmount
 
   useEffect(() => {
     if (lineItems.length > 0 && itemsSubtotal > 0)
       setForm(f => ({ ...f, amountSar: String(Math.round(netTotal * 100) / 100) }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [itemsSubtotal, discountVal])
+  }, [itemsSubtotal, discountAmount])
 
   // ── save ────────────────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -1472,6 +1492,30 @@ export default function Tab2Quotations({
                     </div>
                   )}
                 </div>
+                {/* ── PDF Terms Block (editable) ─────────────────────────────────── */}
+                <div className="rounded-xl p-3 space-y-2" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide" style={{ letterSpacing: '0.05em' }}>
+                    📋 PDF Terms (printed on quotation)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="form-label">Prices Note</label>
+                      <input type="text" value={form.pricesNote} onChange={e => setForm(f => ({ ...f, pricesNote: e.target.value }))} className="form-input" placeholder="Quoted prices are excluding VAT" />
+                    </div>
+                    <div>
+                      <label className="form-label">Terms of Delivery</label>
+                      <input type="text" value={form.termsOfDelivery} onChange={e => setForm(f => ({ ...f, termsOfDelivery: e.target.value }))} className="form-input" placeholder="DDP, Delivered to Site" />
+                    </div>
+                    <div>
+                      <label className="form-label">Warranty</label>
+                      <input type="text" value={form.warranty} onChange={e => setForm(f => ({ ...f, warranty: e.target.value }))} className="form-input" placeholder="12 months from date of supply" />
+                    </div>
+                    <div>
+                      <label className="form-label">TPI Note</label>
+                      <input type="text" value={form.tpiNote} onChange={e => setForm(f => ({ ...f, tpiNote: e.target.value }))} className="form-input" placeholder="Inclusive of FAT/SAT; any TPI will be charged on request." />
+                    </div>
+                  </div>
+                </div>
                 <div>
                   <label className="form-label">Footnote / Notes (printed on PDF)</label>
                   <textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} className="form-input resize-none" />
@@ -1659,10 +1703,30 @@ export default function Tab2Quotations({
                         <div className="flex items-center justify-between gap-8 text-xs text-slate-500">
                           <span>Discount</span>
                           <div className="flex items-center gap-1">
-                            <span className="text-slate-400">SAR</span>
-                            <input type="number" min={0} value={form.discount}
+                            {/* SAR / % toggle */}
+                            <div className="flex rounded overflow-hidden border" style={{ borderColor: '#e2e8f0' }}>
+                              {(['SAR', 'PCT'] as const).map(t => (
+                                <button key={t} type="button"
+                                  onClick={() => setForm(f => ({ ...f, discountType: t }))}
+                                  style={{
+                                    fontSize: 10, padding: '2px 6px', fontWeight: 600,
+                                    background: form.discountType === t ? '#1d4ed8' : '#f8fafc',
+                                    color: form.discountType === t ? '#fff' : '#94a3b8',
+                                    border: 'none', cursor: 'pointer',
+                                  }}>
+                                  {t === 'PCT' ? '%' : 'SAR'}
+                                </button>
+                              ))}
+                            </div>
+                            <input type="number" min={0} max={form.discountType === 'PCT' ? 100 : undefined}
+                              value={form.discount}
                               onChange={e => setForm(f => ({ ...f, discount: e.target.value }))}
-                              className="form-input" style={{ fontSize: 11, padding: '2px 6px', width: 90, textAlign: 'right' }} />
+                              className="form-input" style={{ fontSize: 11, padding: '2px 6px', width: 80, textAlign: 'right' }} />
+                            {form.discountType === 'PCT' && discountAmount > 0 && (
+                              <span className="text-slate-400" style={{ fontSize: 10 }}>
+                                = SAR {discountAmount.toLocaleString('en-SA', { maximumFractionDigits: 0 })}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center justify-between gap-8 text-xs font-bold border-t pt-1" style={{ borderColor: '#e2e8f0' }}>

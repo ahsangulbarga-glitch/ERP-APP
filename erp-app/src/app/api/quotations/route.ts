@@ -46,9 +46,10 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const {
-    qtRef, qtnDate, customerName, projectName, amountSar, discount, status,
+    qtRef, qtnDate, customerName, projectName, amountSar, discount, discountType, status,
     kaeAssignedId, clientContactName, clientContactDetails, remarks, poNumber,
-    subject, rfqCode, application, poBox, paymentTerms, deliveryWeeks, validityDays, notes,
+    subject, rfqCode, application, poBox, paymentTerms, deliveryWeeks, validityDays,
+    termsOfDelivery, warranty, tpiNote, pricesNote, notes,
     lineItems,
   } = body
 
@@ -65,6 +66,7 @@ export async function POST(req: NextRequest) {
       projectName,
       amountSar: parseFloat(amountSar) || 0,
       discount: parseFloat(discount) || 0,
+      discountType: discountType || 'SAR',
       status: status || 'Open',
       poNumber: poNumber || undefined,
       kaeAssignedId: kaeAssignedId || undefined,
@@ -77,6 +79,10 @@ export async function POST(req: NextRequest) {
       paymentTerms,
       deliveryWeeks,
       validityDays: validityDays ? parseInt(validityDays) : 30,
+      termsOfDelivery: termsOfDelivery || null,
+      warranty: warranty || null,
+      tpiNote: tpiNote || null,
+      pricesNote: pricesNote || null,
       notes,
       remarks,
       createdBy: session.user.id,

@@ -69,6 +69,7 @@ model Quotation {
   projectName          String
   amountSar            Float               @default(0)
   discount             Float               @default(0)
+  discountType         String              @default("SAR")
   status               String              @default("Open")
   poNumber             String?
   kaeAssignedId        String?
@@ -81,6 +82,10 @@ model Quotation {
   paymentTerms         String?
   deliveryWeeks        String?
   validityDays         Int                 @default(30)
+  termsOfDelivery      String?
+  warranty             String?
+  tpiNote              String?
+  pricesNote           String?
   notes                String?
   remarks              String?
   approvalStatus       String              @default("Draft")

@@ -284,6 +284,11 @@ export interface QuotationForPDF {
   paymentTerms?: string | null
   deliveryWeeks?: string | null
   validityDays?: number | null
+  termsOfDelivery?: string | null
+  warranty?: string | null
+  tpiNote?: string | null
+  pricesNote?: string | null
+  discountType?: string | null
   notes?: string | null
   remarks?: string | null
   clientContactName?: string | null
@@ -300,6 +305,7 @@ export interface QuotationForPDF {
     qty: number
     unit?: string | null
     rate: number
+    discountPct?: number | null
     amount: number
     delivery?: string | null
   }>
@@ -422,14 +428,14 @@ function CoverPage({ q, logoDataUrl, arabicHeaderUrl }: { q: QuotationForPDF; lo
       {/* ── Terms ── */}
       <View style={s.termsBlock}>
         {([
-          ['Prices',            'Quoted prices are excluding VAT'],
+          ['Prices',            q.pricesNote        || 'Quoted prices are excluding VAT'],
           ['Currency',          'SAR (SAUDI RIYAL)'],
-          ['Terms of Delivery', 'DDP, Delivered to Site'],
-          ['Payment Terms',     q.paymentTerms || 'To be discussed'],
+          ['Terms of Delivery', q.termsOfDelivery   || 'DDP, Delivered to Site'],
+          ['Payment Terms',     q.paymentTerms      || 'To be discussed'],
           ['Delivery',          deliveryText],
-          ['Warranty',          '12 months from date of supply'],
+          ['Warranty',          q.warranty          || '12 months from date of supply'],
           ['Validity',          `${validity} days from the date of quotation`],
-          ['TPI',               'Inclusive of FAT/SAT; any TPI will be charged on request.'],
+          ['TPI',               q.tpiNote           || 'Inclusive of FAT/SAT; any TPI will be charged on request.'],
         ] as [string, string][]).map(([label, value]) => (
           <View key={label} style={s.termsRow}>
             <Text style={s.termsLabel}>{label}</Text>
