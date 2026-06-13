@@ -676,13 +676,6 @@ export default function TabSettings({ user }: Props) {
             </div>
             <div className="p-4 grid grid-cols-2 gap-3">
               <div className="col-span-2">
-                <label className="form-label">Company Full Name (in signature)</label>
-                <input className="form-input" placeholder="DYNAMIC LINE INTERNATIONAL TRADING"
-                  value={(company as any).pdfCompanyFullName ?? ''}
-                  onChange={e => setCompany(c => ({ ...c, pdfCompanyFullName: e.target.value } as any))}
-                  disabled={!isAdmin} />
-              </div>
-              <div className="col-span-2">
                 <label className="form-label">Closing Paragraph</label>
                 <textarea rows={2} className="form-input resize-none"
                   placeholder="We trust you will find our offer most competitive..."

@@ -42,6 +42,7 @@ export async function GET(
       },
     }),
     db.companySetting.findFirst({ where: { tenantId }, select: {
+      companyName: true,
       logoDataUrl: true, pdfHeaderDataUrl: true, preparedByContacts: true,
       pdfCompanyFullName: true, pdfClosingText: true,
       pdfSignatoryName: true, pdfSignatoryTitle: true, pdfSignatoryCc: true,
@@ -70,7 +71,8 @@ export async function GET(
   // Collect all PDF customisation fields (pass undefined if not set so PDF uses defaults)
   const cs = companySetting as any
   const pdfSettings = {
-    companyFullName: cs?.pdfCompanyFullName  || undefined,
+    // Use pdfCompanyFullName if explicitly set, otherwise fall back to companyName from settings
+    companyFullName: cs?.pdfCompanyFullName || cs?.companyName || undefined,
     closingText:     cs?.pdfClosingText      || undefined,
     signatoryName:   cs?.pdfSignatoryName    || undefined,
     signatoryTitle:  cs?.pdfSignatoryTitle   || undefined,
