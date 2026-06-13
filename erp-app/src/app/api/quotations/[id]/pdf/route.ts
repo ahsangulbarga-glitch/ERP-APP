@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireTenant } from '@/lib/tenant'
 import { canRead } from '@/lib/rbac'
+import { prismaBase } from '@/lib/db'
 import { createElement } from 'react'
 import { QuotationPDF } from '@/components/pdf/QuotationPDF'
 import fs from 'fs'
@@ -152,9 +153,18 @@ export async function GET(
 
   // Collect all PDF customisation fields (pass undefined if not set so PDF uses defaults)
   const cs = companySetting as any
+  // Final fallback: look up tenant name from the Tenant table if CompanySetting is missing
+  let tenantName: string | null = null
+  if (!cs?.companyName) {
+    try {
+      const t = await prismaBase.tenant.findUnique({ where: { id: tenantId }, select: { name: true } })
+      tenantName = t?.name || null
+    } catch { /* ignore */ }
+  }
+
   const pdfSettings = {
-    // Use pdfCompanyFullName if explicitly set, otherwise fall back to companyName from settings
-    companyFullName: cs?.pdfCompanyFullName || cs?.companyName || undefined,
+    // Priority: pdfCompanyFullName → CompanySetting.companyName → Tenant.name
+    companyFullName: cs?.pdfCompanyFullName || cs?.companyName || tenantName || undefined,
     closingText:     cs?.pdfClosingText      || undefined,
     signatoryName:   cs?.pdfSignatoryName    || undefined,
     signatoryTitle:  cs?.pdfSignatoryTitle   || undefined,
