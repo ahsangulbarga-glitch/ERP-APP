@@ -98,6 +98,7 @@ export async function PATCH(req: NextRequest) {
       ...(data.pdfLegalNotice       !== undefined && { pdfLegalNotice:       data.pdfLegalNotice      ?? null }),
       ...(data.pdfFooterAddress     !== undefined && { pdfFooterAddress:     data.pdfFooterAddress    ?? null }),
       ...(data.pdfFooterEmails      !== undefined && { pdfFooterEmails:      data.pdfFooterEmails     ?? null }),
+      ...(data.pdfFootnotes         !== undefined && { pdfFootnotes:         data.pdfFootnotes != null ? JSON.stringify(data.pdfFootnotes) : null }),
       updatedBy: session.user.id,
     },
     create: {
@@ -126,6 +127,7 @@ export async function PATCH(req: NextRequest) {
       pdfLegalNotice:      data.pdfLegalNotice      ?? null,
       pdfFooterAddress:    data.pdfFooterAddress    ?? null,
       pdfFooterEmails:     data.pdfFooterEmails     ?? null,
+      pdfFootnotes:        data.pdfFootnotes != null ? JSON.stringify(data.pdfFootnotes) : null,
       updatedBy:        session.user.id,
     },
   })

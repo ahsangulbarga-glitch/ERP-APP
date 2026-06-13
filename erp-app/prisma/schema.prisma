@@ -689,6 +689,7 @@ model CompanySetting {
   // ── PDF Footer ───────────────────────────────────────────────────────────────
   pdfFooterAddress    String?                // Left column — company address (multiline)
   pdfFooterEmails     String?                // Right column — contact emails (newline-separated)
+  pdfFootnotes        String?                // JSON: string[] — bullet footnotes on the items page
   updatedAt        DateTime @updatedAt
   updatedBy        String?
 }

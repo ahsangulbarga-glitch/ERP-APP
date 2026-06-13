@@ -138,6 +138,144 @@ async function processUpload(file: File, maxW: number, maxH: number, quality = 0
 // Keep alias for logo uploads
 const compressImage = processUpload
 
+// ── PDF Footnotes Editor ──────────────────────────────────────────────────────
+const DEFAULT_FOOTNOTES = [
+  'Any deviation in specification or material of construction, quantity will warrant a change in price from the manufacturer.',
+  'Any subsequent claims regarding Model Code, Material of Construction (MOC), Design, or any other discrepancies will not be honored by M/s DLIT',
+  'Please note that due to the current situation, the delivery lead time may be longer than initially offered',
+  'The offered prices are valid only for this enquiry and quantity. Orders are non-cancellable upon PO placement. TDS of the proposed valves is enclosed with the offer',
+]
+
+function FootnotesEditor({
+  footnotes, onChange, isAdmin,
+}: { footnotes: string[]; onChange: (f: string[]) => void; isAdmin: boolean }) {
+  const [adding,   setAdding]   = useState(false)
+  const [newNote,  setNewNote]  = useState('')
+  const [editIdx,  setEditIdx]  = useState<number | null>(null)
+  const [editText, setEditText] = useState('')
+
+  // If no custom footnotes saved, show defaults in preview
+  const displayList = footnotes.length > 0 ? footnotes : DEFAULT_FOOTNOTES
+  const isDefault   = footnotes.length === 0
+
+  const add = () => {
+    if (!newNote.trim()) return
+    onChange([...footnotes.length > 0 ? footnotes : DEFAULT_FOOTNOTES, newNote.trim()])
+    setNewNote(''); setAdding(false)
+  }
+
+  const remove = (i: number) => {
+    const base = footnotes.length > 0 ? footnotes : DEFAULT_FOOTNOTES
+    onChange(base.filter((_, idx) => idx !== i))
+  }
+
+  const startEdit = (i: number) => {
+    setEditIdx(i)
+    setEditText((footnotes.length > 0 ? footnotes : DEFAULT_FOOTNOTES)[i])
+  }
+
+  const saveEdit = () => {
+    if (editIdx === null) return
+    const base = [...(footnotes.length > 0 ? footnotes : DEFAULT_FOOTNOTES)]
+    base[editIdx] = editText.trim()
+    onChange(base); setEditIdx(null)
+  }
+
+  const moveUp = (i: number) => {
+    const base = [...(footnotes.length > 0 ? footnotes : DEFAULT_FOOTNOTES)]
+    if (i === 0) return; [base[i-1], base[i]] = [base[i], base[i-1]]; onChange(base)
+  }
+
+  const moveDown = (i: number) => {
+    const base = [...(footnotes.length > 0 ? footnotes : DEFAULT_FOOTNOTES)]
+    if (i === base.length-1) return; [base[i], base[i+1]] = [base[i+1], base[i]]; onChange(base)
+  }
+
+  const resetToDefaults = () => onChange([])
+
+  return (
+    <div className="rounded-xl border border-slate-200 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+        <div>
+          <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">📝 PDF Footnotes</span>
+          <p className="text-xs text-slate-500 mt-0.5">Bullet points printed at the bottom of the line-items page on every quotation PDF.</p>
+        </div>
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            {!isDefault && (
+              <button onClick={resetToDefaults} className="text-xs text-slate-500 border border-slate-200 px-2 py-1 rounded hover:bg-slate-50">
+                Reset defaults
+              </button>
+            )}
+            {!adding && (
+              <button onClick={() => { setAdding(true); setNewNote('') }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                style={{ background: '#6366f1' }}>
+                <Plus size={12} /> Add Note
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="p-3 space-y-1.5">
+        {isDefault && (
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+            ⚠️ Showing built-in defaults. Edit or remove any line to start customising.
+          </div>
+        )}
+
+        {displayList.map((note, i) => (
+          <div key={i}>
+            {editIdx === i ? (
+              <div className="flex gap-2">
+                <textarea rows={2} className="form-input text-xs flex-1 resize-none" value={editText}
+                  onChange={e => setEditText(e.target.value)} />
+                <div className="flex flex-col gap-1">
+                  <button onClick={saveEdit} className="px-2 py-1 rounded text-xs text-white" style={{ background: '#6366f1' }}>
+                    <Check size={11} />
+                  </button>
+                  <button onClick={() => setEditIdx(null)} className="px-2 py-1 rounded text-xs text-slate-500 border border-slate-200">
+                    <X size={11} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-xl border border-slate-100 bg-white group">
+                <span className="text-slate-400 text-xs mt-0.5 shrink-0">*</span>
+                <p className="text-xs text-slate-700 flex-1 leading-relaxed">{note}</p>
+                {isAdmin && (
+                  <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => moveUp(i)} className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" disabled={i === 0}><ChevronUp size={11} /></button>
+                    <button onClick={() => moveDown(i)} className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" disabled={i === displayList.length-1}><ChevronDown size={11} /></button>
+                    <button onClick={() => startEdit(i)} className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"><Pencil size={11} /></button>
+                    <button onClick={() => remove(i)} className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50"><Trash2 size={11} /></button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+
+        {adding && isAdmin && (
+          <div className="flex gap-2 pt-1">
+            <textarea rows={2} className="form-input text-xs flex-1 resize-none" placeholder="Enter footnote text..."
+              value={newNote} onChange={e => setNewNote(e.target.value)} />
+            <div className="flex flex-col gap-1">
+              <button onClick={add} className="px-2 py-1.5 rounded text-xs text-white" style={{ background: '#6366f1' }}>
+                <Check size={11} />
+              </button>
+              <button onClick={() => setAdding(false)} className="px-2 py-1.5 rounded text-xs text-slate-500 border border-slate-200">
+                <X size={11} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Prepared By Contacts Editor ───────────────────────────────────────────────
 type PreparedContact = { name: string; title: string; email: string; contact: string }
 
@@ -742,6 +880,13 @@ export default function TabSettings({ user }: Props) {
               </div>
             </div>
           </div>
+
+          {/* ── PDF Footnotes ── */}
+          <FootnotesEditor
+            footnotes={(() => { try { return JSON.parse((company as any).pdfFootnotes || '[]') } catch { return [] } })()}
+            onChange={notes => setCompany(c => ({ ...c, pdfFootnotes: JSON.stringify(notes) } as any))}
+            isAdmin={isAdmin}
+          />
 
           {/* ── Prepared By Contacts ── */}
           <PreparedByEditor

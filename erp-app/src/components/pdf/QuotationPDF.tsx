@@ -495,6 +495,7 @@ type PdfSettings = {
   legalNotice?:     string
   footerAddress?:   string
   footerEmails?:    string
+  footnotes?:       string[]
 }
 
 function ItemsPage({
@@ -639,14 +640,24 @@ function ItemsPage({
         </View>
       </View>
 
-      {/* Footnotes */}
-      <View style={{ marginBottom: 6 }}>
-        <Text style={s.fnText}>*Any deviation in specification or material of construction, quantity will warrant a change in price from the manufacturer.</Text>
-        <Text style={s.fnText}>*Any subsequent claims regarding Model Code, Material of Construction (MOC), Design, or any other discrepancies will not be honored by M/s DLIT</Text>
-        <Text style={s.fnText}>*Please note that due to the current situation, the delivery lead time may be longer than initially offered</Text>
-        <Text style={s.fnText}>*The offered prices are valid only for this enquiry and quantity. Orders are non-cancellable upon PO placement. TDS of the proposed valves is enclosed with the offer</Text>
-        {q.notes ? <Text style={[s.fnText, { marginTop: 2 }]}>*{q.notes}</Text> : null}
-      </View>
+      {/* Footnotes — from settings or hardcoded defaults */}
+      {(() => {
+        const defaultNotes = [
+          'Any deviation in specification or material of construction, quantity will warrant a change in price from the manufacturer.',
+          'Any subsequent claims regarding Model Code, Material of Construction (MOC), Design, or any other discrepancies will not be honored by M/s DLIT',
+          'Please note that due to the current situation, the delivery lead time may be longer than initially offered',
+          'The offered prices are valid only for this enquiry and quantity. Orders are non-cancellable upon PO placement. TDS of the proposed valves is enclosed with the offer',
+        ]
+        const notes = (pdfSettings.footnotes && pdfSettings.footnotes.length > 0) ? pdfSettings.footnotes : defaultNotes
+        return (
+          <View style={{ marginBottom: 6 }}>
+            {notes.map((note, i) => (
+              <Text key={i} style={s.fnText}>*{note}</Text>
+            ))}
+            {q.notes ? <Text style={[s.fnText, { marginTop: 2 }]}>*{q.notes}</Text> : null}
+          </View>
+        )
+      })()}
 
       {/* Prepared by */}
       <View style={s.prepHead}>

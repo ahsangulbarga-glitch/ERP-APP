@@ -62,6 +62,7 @@ export async function GET(
       pdfCompanyFullName: true, pdfClosingText: true,
       pdfSignatoryName: true, pdfSignatoryTitle: true, pdfSignatoryCc: true,
       pdfLegalNotice: true, pdfFooterAddress: true, pdfFooterEmails: true,
+      pdfFootnotes: true,
     }}).catch(() => null),
   ])
 
@@ -160,6 +161,7 @@ export async function GET(
     legalNotice:     cs?.pdfLegalNotice      || undefined,
     footerAddress:   cs?.pdfFooterAddress    || undefined,
     footerEmails:    cs?.pdfFooterEmails     || undefined,
+    footnotes:       cs?.pdfFootnotes ? (() => { try { return JSON.parse(cs.pdfFootnotes) } catch { return undefined } })() : undefined,
   }
 
   try {
