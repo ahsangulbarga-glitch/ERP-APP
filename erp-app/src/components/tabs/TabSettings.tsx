@@ -405,7 +405,8 @@ function PreparedByEditor({
 
 export default function TabSettings({ user }: Props) {
   const isAdmin = canWrite(user.role, 'settings')
-  const [sub, setSub] = useState('company')
+  const [sub,     setSub]     = useState('company')
+  const [docType, setDocType] = useState<'quotation' | 'invoice' | 'salesorder'>('quotation')
 
   const [company, setCompany]   = useState<Partial<CompanySetting>>({})
   const [cSaving, setCSaving]   = useState(false)
@@ -781,157 +782,179 @@ export default function TabSettings({ user }: Props) {
       {/* ── Document Templates ── */}
       {sub === 'templates' && cLoaded && (
         <div className="space-y-5">
+          {/* Doc type tabs */}
+          <div className="flex gap-2 p-1 rounded-xl bg-slate-100 w-fit">
+            {([
+              { id: 'quotation',  label: '📄 Quotation / Offer' },
+              { id: 'invoice',    label: '🧾 Invoice' },
+              { id: 'salesorder', label: '🛒 Sales Order' },
+            ] as const).map(t => (
+              <button key={t.id} onClick={() => setDocType(t.id)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  docType === t.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-          {/* Doc type selector */}
-          {(() => {
-            const [docType, setDocType] = useState<'quotation' | 'invoice' | 'salesorder'>('quotation')
-            const cs = company as any
-
-            const field = (label: string, key: string, placeholder: string, rows = 1) => (
-              <div>
-                <label className="form-label">{label}</label>
-                {rows > 1 ? (
-                  <textarea rows={rows} className="form-input resize-none"
-                    placeholder={placeholder}
-                    value={cs[key] ?? ''}
-                    onChange={e => setCompany(c => ({ ...c, [key]: e.target.value } as any))}
-                    disabled={!isAdmin} />
-                ) : (
-                  <input className="form-input" placeholder={placeholder}
-                    value={cs[key] ?? ''}
-                    onChange={e => setCompany(c => ({ ...c, [key]: e.target.value } as any))}
-                    disabled={!isAdmin} />
-                )}
-              </div>
-            )
-
-            return (
-              <>
-                {/* Document type tabs */}
-                <div className="flex gap-2 p-1 rounded-xl bg-slate-100 w-fit">
-                  {([
-                    { id: 'quotation',  label: '📄 Quotation / Offer' },
-                    { id: 'invoice',    label: '🧾 Invoice' },
-                    { id: 'salesorder', label: '🛒 Sales Order' },
-                  ] as const).map(t => (
-                    <button key={t.id} onClick={() => setDocType(t.id)}
-                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                        docType === t.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                      }`}>
-                      {t.label}
-                    </button>
-                  ))}
+          {/* ── QUOTATION ── */}
+          {docType === 'quotation' && (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  🎨 Letterhead &amp; Branding
                 </div>
-
-                {/* ── QUOTATION ── */}
-                {docType === 'quotation' && (
-                  <div className="space-y-4">
-                    {/* Shared branding */}
-                    <div className="rounded-xl border border-slate-200 overflow-hidden">
-                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        🎨 Letterhead &amp; Branding
-                      </div>
-                      <div className="p-4 space-y-3">
-                        <p className="text-xs text-slate-500">Upload your PDF letterhead image in <button onClick={() => setSub('company')} className="text-indigo-600 underline">Company Info → Branding &amp; Logos</button>.</p>
-                        {cs.pdfHeaderDataUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={cs.pdfHeaderDataUrl} alt="letterhead" className="w-full max-h-20 object-contain rounded border border-slate-200 bg-white" />
-                        ) : (
-                          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">⚠️ No letterhead uploaded — using default DLIT header</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Closing block */}
-                    <div className="rounded-xl border border-slate-200 overflow-hidden">
-                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        ✍️ Closing &amp; Signature (Cover Page)
-                      </div>
-                      <div className="p-4 grid grid-cols-2 gap-3">
-                        <div className="col-span-2">{field('Closing Paragraph', 'pdfClosingText', 'We trust you will find our offer most competitive...', 2)}</div>
-                        {field('Signatory Name', 'pdfSignatoryName', 'OMAIR AZMI')}
-                        {field('Signatory Title', 'pdfSignatoryTitle', 'Manager, Water Division')}
-                        <div className="col-span-2">{field('CC Line', 'pdfSignatoryCc', 'Mr. Mohammed Afaque Ahmed, CEO')}</div>
-                        <div className="col-span-2">{field('Legal Notice', 'pdfLegalNotice', 'THIS OFFER IS LEGAL WITHOUT SIGNATURE DURING ELECTRONIC TRANSMISSION')}</div>
-                      </div>
-                    </div>
-
-                    {/* Footnotes */}
-                    <FootnotesEditor
-                      footnotes={(() => { try { return JSON.parse(cs.pdfFootnotes || '[]') } catch { return [] } })()}
-                      onChange={notes => setCompany(c => ({ ...c, pdfFootnotes: JSON.stringify(notes) } as any))}
-                      isAdmin={isAdmin}
-                    />
-
-                    {/* Footer */}
-                    <div className="rounded-xl border border-slate-200 overflow-hidden">
-                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        📄 Page Footer (all pages)
-                      </div>
-                      <div className="p-4 grid grid-cols-2 gap-3">
-                        {field('Address (left)', 'pdfFooterAddress', '17, 3rd Floor, 7202, Saeed Ibn Zayd Rd,\nQurtubah, 13247, Riyadh, KSA', 2)}
-                        {field('Emails (right, one per line)', 'pdfFooterEmails', 'sales@company.com\ninfo@company.com', 2)}
-                      </div>
-                    </div>
-
-                    {/* Prepared by */}
-                    <PreparedByEditor
-                      contacts={(() => { try { return JSON.parse(cs.preparedByContacts || '[]') } catch { return [] } })()}
-                      onChange={contacts => setCompany(c => ({ ...c, preparedByContacts: JSON.stringify(contacts) } as any))}
-                      isAdmin={isAdmin}
-                    />
+                <div className="p-4 space-y-2">
+                  <p className="text-xs text-slate-500">Upload your PDF letterhead image in <button onClick={() => setSub('company')} className="text-indigo-600 underline">Company Info → Branding &amp; Logos</button>.</p>
+                  {(company as any).pdfHeaderDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={(company as any).pdfHeaderDataUrl} alt="letterhead" className="w-full max-h-20 object-contain rounded border border-slate-200 bg-white" />
+                  ) : (
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">⚠️ No letterhead uploaded — using default DLIT header</p>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  ✍️ Closing &amp; Signature (Cover Page)
+                </div>
+                <div className="p-4 grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="form-label">Closing Paragraph</label>
+                    <textarea rows={2} className="form-input resize-none" placeholder="We trust you will find our offer most competitive..."
+                      value={(company as any).pdfClosingText ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, pdfClosingText: e.target.value } as any))} />
                   </div>
-                )}
-
-                {/* ── INVOICE ── */}
-                {docType === 'invoice' && (
-                  <div className="space-y-4">
-                    <div className="rounded-xl border border-slate-200 bg-blue-50/40 p-4 text-xs text-slate-600">
-                      ℹ️ These defaults are printed on every invoice PDF. You can override them per-invoice when creating/editing.
-                    </div>
-                    <div className="rounded-xl border border-slate-200 overflow-hidden">
-                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        🧾 Invoice Template Defaults
-                      </div>
-                      <div className="p-4 space-y-3">
-                        {field('Default Payment Terms', 'invoicePaymentTerms', '100% advance payment upon receipt of invoice')}
-                        {field('Bank Details (printed on invoice)', 'invoiceBankDetails', 'Bank: ABC Bank | IBAN: SA00 0000 0000 0000 | Account: 000000000', 3)}
-                        {field('Standard Notes / Terms', 'invoiceNotes', 'All prices are exclusive of VAT. VAT will be charged at the applicable rate.', 3)}
-                      </div>
-                    </div>
+                  <div>
+                    <label className="form-label">Signatory Name</label>
+                    <input className="form-input" placeholder="OMAIR AZMI"
+                      value={(company as any).pdfSignatoryName ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, pdfSignatoryName: e.target.value } as any))} />
                   </div>
-                )}
-
-                {/* ── SALES ORDER ── */}
-                {docType === 'salesorder' && (
-                  <div className="space-y-4">
-                    <div className="rounded-xl border border-slate-200 bg-blue-50/40 p-4 text-xs text-slate-600">
-                      ℹ️ These defaults appear on every Sales Order PDF. You can override them per-SO when creating/editing.
-                    </div>
-                    <div className="rounded-xl border border-slate-200 overflow-hidden">
-                      <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                        🛒 Sales Order Template Defaults
-                      </div>
-                      <div className="p-4 space-y-3">
-                        {field('Default Terms &amp; Conditions', 'soTerms', 'Delivery: DDP, Delivered to Site | Warranty: 12 months from date of supply', 2)}
-                        {field('Standard Notes (printed on SO)', 'soNotes', 'All sales orders are subject to our standard terms and conditions.', 3)}
-                      </div>
-                    </div>
+                  <div>
+                    <label className="form-label">Signatory Title</label>
+                    <input className="form-input" placeholder="Manager, Water Division"
+                      value={(company as any).pdfSignatoryTitle ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, pdfSignatoryTitle: e.target.value } as any))} />
                   </div>
-                )}
+                  <div className="col-span-2">
+                    <label className="form-label">CC Line</label>
+                    <input className="form-input" placeholder="Mr. Mohammed Afaque Ahmed, CEO"
+                      value={(company as any).pdfSignatoryCc ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, pdfSignatoryCc: e.target.value } as any))} />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="form-label">Legal Notice</label>
+                    <input className="form-input" placeholder="THIS OFFER IS LEGAL WITHOUT SIGNATURE DURING ELECTRONIC TRANSMISSION"
+                      value={(company as any).pdfLegalNotice ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, pdfLegalNotice: e.target.value } as any))} />
+                  </div>
+                </div>
+              </div>
+              <FootnotesEditor
+                footnotes={(() => { try { return JSON.parse((company as any).pdfFootnotes || '[]') } catch { return [] } })()}
+                onChange={notes => setCompany(c => ({ ...c, pdfFootnotes: JSON.stringify(notes) } as any))}
+                isAdmin={isAdmin}
+              />
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  📄 Page Footer (all pages)
+                </div>
+                <div className="p-4 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="form-label">Address (left)</label>
+                    <textarea rows={2} className="form-input resize-none" placeholder={'17, 3rd Floor...\nRiyadh, KSA'}
+                      value={(company as any).pdfFooterAddress ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, pdfFooterAddress: e.target.value } as any))} />
+                  </div>
+                  <div>
+                    <label className="form-label">Emails (right, one per line)</label>
+                    <textarea rows={2} className="form-input resize-none" placeholder={'sales@company.com\ninfo@company.com'}
+                      value={(company as any).pdfFooterEmails ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, pdfFooterEmails: e.target.value } as any))} />
+                  </div>
+                </div>
+              </div>
+              <PreparedByEditor
+                contacts={(() => { try { return JSON.parse((company as any).preparedByContacts || '[]') } catch { return [] } })()}
+                onChange={contacts => setCompany(c => ({ ...c, preparedByContacts: JSON.stringify(contacts) } as any))}
+                isAdmin={isAdmin}
+              />
+            </div>
+          )}
 
-                {/* Save button */}
-                {isAdmin && (
-                  <button onClick={saveCompany} disabled={cSaving}
-                    className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
-                    style={{ background: '#6366f1' }}>
-                    <Save size={14} />
-                    {cSaving ? 'Saving…' : `Save ${docType === 'quotation' ? 'Quotation' : docType === 'invoice' ? 'Invoice' : 'Sales Order'} Template`}
-                  </button>
-                )}
-              </>
-            )
-          })()}
+          {/* ── INVOICE ── */}
+          {docType === 'invoice' && (
+            <div className="space-y-4">
+              <div className="text-xs text-slate-600 bg-blue-50/40 border border-slate-200 rounded-xl p-4">
+                ℹ️ These defaults are printed on every invoice PDF.
+              </div>
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  🧾 Invoice Template Defaults
+                </div>
+                <div className="p-4 space-y-3">
+                  <div>
+                    <label className="form-label">Default Payment Terms</label>
+                    <input className="form-input" placeholder="100% advance payment upon receipt of invoice"
+                      value={(company as any).invoicePaymentTerms ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, invoicePaymentTerms: e.target.value } as any))} />
+                  </div>
+                  <div>
+                    <label className="form-label">Bank Details (printed on invoice)</label>
+                    <textarea rows={3} className="form-input resize-none" placeholder="Bank: ABC Bank | IBAN: SA00 0000 0000 0000 | Account: 000000000"
+                      value={(company as any).invoiceBankDetails ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, invoiceBankDetails: e.target.value } as any))} />
+                  </div>
+                  <div>
+                    <label className="form-label">Standard Notes / Terms</label>
+                    <textarea rows={3} className="form-input resize-none" placeholder="All prices are exclusive of VAT."
+                      value={(company as any).invoiceNotes ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, invoiceNotes: e.target.value } as any))} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── SALES ORDER ── */}
+          {docType === 'salesorder' && (
+            <div className="space-y-4">
+              <div className="text-xs text-slate-600 bg-blue-50/40 border border-slate-200 rounded-xl p-4">
+                ℹ️ These defaults appear on every Sales Order PDF.
+              </div>
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                  🛒 Sales Order Template Defaults
+                </div>
+                <div className="p-4 space-y-3">
+                  <div>
+                    <label className="form-label">Default Terms &amp; Conditions</label>
+                    <textarea rows={2} className="form-input resize-none" placeholder="Delivery: DDP, Delivered to Site | Warranty: 12 months from date of supply"
+                      value={(company as any).soTerms ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, soTerms: e.target.value } as any))} />
+                  </div>
+                  <div>
+                    <label className="form-label">Standard Notes (printed on SO)</label>
+                    <textarea rows={3} className="form-input resize-none" placeholder="All sales orders are subject to our standard terms and conditions."
+                      value={(company as any).soNotes ?? ''} disabled={!isAdmin}
+                      onChange={e => setCompany(c => ({ ...c, soNotes: e.target.value } as any))} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Save */}
+          {isAdmin && (
+            <button onClick={saveCompany} disabled={cSaving}
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
+              style={{ background: '#6366f1' }}>
+              <Save size={14} />
+              {cSaving ? 'Saving…' : `Save ${docType === 'quotation' ? 'Quotation' : docType === 'invoice' ? 'Invoice' : 'Sales Order'} Template`}
+            </button>
+          )}
         </div>
       )}
 
