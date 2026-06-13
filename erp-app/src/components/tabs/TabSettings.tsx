@@ -405,8 +405,9 @@ function PreparedByEditor({
 
 export default function TabSettings({ user }: Props) {
   const isAdmin = canWrite(user.role, 'settings')
-  const [sub,     setSub]     = useState('company')
-  const [docType, setDocType] = useState<'quotation' | 'invoice' | 'salesorder'>('quotation')
+  const [sub,         setSub]         = useState('company')
+  const [docType,     setDocType]     = useState<'quotation' | 'invoice' | 'salesorder'>('quotation')
+  const [showPreview, setShowPreview] = useState(false)
 
   const [company, setCompany]   = useState<Partial<CompanySetting>>({})
   const [cSaving, setCSaving]   = useState(false)
@@ -607,7 +608,7 @@ export default function TabSettings({ user }: Props) {
   const activeDays = (company.workingDays ?? '0,1,2,3,4').split(',').map(Number)
 
   return (
-    <div className="p-4 space-y-4 max-w-3xl mx-auto">
+    <div className="p-4 space-y-4 max-w-screen-xl mx-auto">
 
       {/* Sub-tab bar */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-1 flex gap-1">
@@ -782,21 +783,33 @@ export default function TabSettings({ user }: Props) {
       {/* ── Document Templates ── */}
       {sub === 'templates' && cLoaded && (
         <div className="space-y-5">
-          {/* Doc type tabs */}
-          <div className="flex gap-2 p-1 rounded-xl bg-slate-100 w-fit">
-            {([
-              { id: 'quotation',  label: '📄 Quotation / Offer' },
-              { id: 'invoice',    label: '🧾 Invoice' },
-              { id: 'salesorder', label: '🛒 Sales Order' },
-            ] as const).map(t => (
-              <button key={t.id} onClick={() => setDocType(t.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  docType === t.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                }`}>
-                {t.label}
-              </button>
-            ))}
+          {/* Doc type tabs + preview toggle */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex gap-2 p-1 rounded-xl bg-slate-100 w-fit">
+              {([
+                { id: 'quotation',  label: '📄 Quotation / Offer' },
+                { id: 'invoice',    label: '🧾 Invoice' },
+                { id: 'salesorder', label: '🛒 Sales Order' },
+              ] as const).map(t => (
+                <button key={t.id} onClick={() => setDocType(t.id)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                    docType === t.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setShowPreview(p => !p)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
+                showPreview ? 'bg-indigo-600 text-white border-indigo-600' : 'text-slate-600 border-slate-300 hover:border-indigo-400 hover:text-indigo-600'
+              }`}>
+              👁 {showPreview ? 'Hide Preview' : 'Show Preview'}
+            </button>
           </div>
+
+          {/* Two-column layout: form + preview */}
+          <div className={showPreview ? 'grid grid-cols-2 gap-4 items-start' : ''}>
+          <div className="space-y-4">
 
           {/* ── QUOTATION ── */}
           {docType === 'quotation' && (
@@ -955,6 +968,97 @@ export default function TabSettings({ user }: Props) {
               {cSaving ? 'Saving…' : `Save ${docType === 'quotation' ? 'Quotation' : docType === 'invoice' ? 'Invoice' : 'Sales Order'} Template`}
             </button>
           )}
+          </div>{/* end form column */}
+
+          {/* ── Live Preview Panel ── */}
+          {showPreview && (
+            <div className="sticky top-4 rounded-xl border border-slate-300 overflow-hidden shadow-lg bg-white" style={{ fontSize: 10 }}>
+              {/* Preview header */}
+              <div className="flex items-center justify-between px-3 py-2 bg-slate-800 text-white text-xs">
+                <span className="font-medium">📄 Live Preview</span>
+                <span className="text-slate-400 text-[10px]">Updates as you edit</span>
+              </div>
+
+              {/* Mock PDF page */}
+              <div className="p-4 space-y-3" style={{ fontFamily: 'Times New Roman, serif', background: '#fff', minHeight: 400 }}>
+
+                {/* Letterhead */}
+                {(company as any).pdfHeaderDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={(company as any).pdfHeaderDataUrl} alt="header" className="w-full object-contain mb-2" style={{ maxHeight: 60 }} />
+                ) : (
+                  <div className="flex items-center justify-center py-2 mb-2 border border-dashed border-slate-300 rounded text-slate-400 text-[10px]">
+                    [Letterhead — upload in Branding &amp; Logos]
+                  </div>
+                )}
+
+                {docType === 'quotation' && (
+                  <>
+                    {/* Closing */}
+                    <div className="text-[10px] leading-relaxed text-slate-700 border-t pt-3">
+                      <p className="mb-1">{(company as any).pdfClosingText || 'We trust you will find our offer most competitive. If you need any further information, please feel free to contact us.'}</p>
+                      <p>Thank you and assuring you of our best services at all times.</p>
+                    </div>
+
+                    {/* Signature */}
+                    <div className="text-[10px] pt-2 space-y-0.5 text-slate-700">
+                      <p>Yours Faithfully,</p>
+                      <p>For <strong>{company.companyName || 'COMPANY NAME'},</strong></p>
+                      <p className="pt-3 font-bold">{(company as any).pdfSignatoryName || 'SIGNATORY NAME'}</p>
+                      <p>{(company as any).pdfSignatoryTitle || 'Title'}</p>
+                      {(company as any).pdfSignatoryCc && <p className="text-slate-500">cc - {(company as any).pdfSignatoryCc}</p>}
+                    </div>
+
+                    {/* Legal notice */}
+                    <p className="text-[8px] text-slate-400 uppercase tracking-wide text-center pt-2 border-t">
+                      {(company as any).pdfLegalNotice || 'THIS OFFER IS LEGAL WITHOUT SIGNATURE DURING ELECTRONIC TRANSMISSION'}
+                    </p>
+
+                    {/* Footnotes */}
+                    <div className="text-[9px] italic text-slate-600 space-y-0.5 border-t pt-2">
+                      {(() => {
+                        try {
+                          const notes = JSON.parse((company as any).pdfFootnotes || '[]')
+                          const list = notes.length > 0 ? notes : [
+                            'Any deviation in specification or material of construction, quantity will warrant a change in price from the manufacturer.',
+                            'Any subsequent claims regarding Model Code, MOC, Design, or any other discrepancies will not be honored by M/s DLIT',
+                          ]
+                          return list.map((n: string, i: number) => <p key={i}>*{n}</p>)
+                        } catch { return null }
+                      })()}
+                    </div>
+                  </>
+                )}
+
+                {docType === 'invoice' && (
+                  <div className="text-[10px] text-slate-700 space-y-2 border-t pt-3">
+                    <p><strong>Payment Terms:</strong> {(company as any).invoicePaymentTerms || '—'}</p>
+                    {(company as any).invoiceBankDetails && (
+                      <p className="whitespace-pre-line"><strong>Bank Details:</strong>{'\n'}{(company as any).invoiceBankDetails}</p>
+                    )}
+                    {(company as any).invoiceNotes && (
+                      <p className="whitespace-pre-line text-slate-500">{(company as any).invoiceNotes}</p>
+                    )}
+                  </div>
+                )}
+
+                {docType === 'salesorder' && (
+                  <div className="text-[10px] text-slate-700 space-y-2 border-t pt-3">
+                    {(company as any).soTerms && <p className="whitespace-pre-line"><strong>Terms:</strong> {(company as any).soTerms}</p>}
+                    {(company as any).soNotes  && <p className="whitespace-pre-line text-slate-500">{(company as any).soNotes}</p>}
+                  </div>
+                )}
+
+                {/* Footer */}
+                <div className="flex justify-between text-[8px] text-slate-500 border-t pt-2 mt-3">
+                  <span className="whitespace-pre-line">{(company as any).pdfFooterAddress || '17, 3rd Floor, Riyadh, KSA'}</span>
+                  <span>Page 1 of 2</span>
+                  <span className="whitespace-pre-line text-right">{(company as any).pdfFooterEmails || 'sales@company.com'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+          </div>{/* end grid */}
         </div>
       )}
 
