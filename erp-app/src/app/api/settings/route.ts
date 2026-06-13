@@ -99,6 +99,11 @@ export async function PATCH(req: NextRequest) {
       ...(data.pdfFooterAddress     !== undefined && { pdfFooterAddress:     data.pdfFooterAddress    ?? null }),
       ...(data.pdfFooterEmails      !== undefined && { pdfFooterEmails:      data.pdfFooterEmails     ?? null }),
       ...(data.pdfFootnotes         !== undefined && { pdfFootnotes:         data.pdfFootnotes != null ? JSON.stringify(data.pdfFootnotes) : null }),
+      ...(data.invoiceNotes         !== undefined && { invoiceNotes:         data.invoiceNotes         ?? null }),
+      ...(data.invoicePaymentTerms  !== undefined && { invoicePaymentTerms:  data.invoicePaymentTerms  ?? null }),
+      ...(data.invoiceBankDetails   !== undefined && { invoiceBankDetails:   data.invoiceBankDetails   ?? null }),
+      ...(data.soNotes              !== undefined && { soNotes:              data.soNotes              ?? null }),
+      ...(data.soTerms              !== undefined && { soTerms:              data.soTerms              ?? null }),
       updatedBy: session.user.id,
     },
     create: {
@@ -128,6 +133,11 @@ export async function PATCH(req: NextRequest) {
       pdfFooterAddress:    data.pdfFooterAddress    ?? null,
       pdfFooterEmails:     data.pdfFooterEmails     ?? null,
       pdfFootnotes:        data.pdfFootnotes != null ? JSON.stringify(data.pdfFootnotes) : null,
+      invoiceNotes:        data.invoiceNotes        ?? null,
+      invoicePaymentTerms: data.invoicePaymentTerms ?? null,
+      invoiceBankDetails:  data.invoiceBankDetails  ?? null,
+      soNotes:             data.soNotes             ?? null,
+      soTerms:             data.soTerms             ?? null,
       updatedBy:        session.user.id,
     },
   })

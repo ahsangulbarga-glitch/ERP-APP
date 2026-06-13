@@ -690,6 +690,13 @@ model CompanySetting {
   pdfFooterAddress    String?                // Left column — company address (multiline)
   pdfFooterEmails     String?                // Right column — contact emails (newline-separated)
   pdfFootnotes        String?                // JSON: string[] — bullet footnotes on the items page
+  // ── Invoice template ─────────────────────────────────────────────────────────
+  invoiceNotes        String?                // Notes/terms printed on every invoice PDF
+  invoicePaymentTerms String?                // Default payment terms text on invoice
+  invoiceBankDetails  String?                // Bank account details printed on invoice
+  // ── Sales Order template ──────────────────────────────────────────────────────
+  soNotes             String?                // Notes printed on every Sales Order PDF
+  soTerms             String?                // Delivery/payment terms on SO PDF
   updatedAt        DateTime @updatedAt
   updatedBy        String?
 }
