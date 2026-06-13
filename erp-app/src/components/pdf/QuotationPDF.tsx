@@ -295,6 +295,10 @@ export interface QuotationForPDF {
   clientContactName?: string | null
   clientContactDetails?: string | null
   kaeAssigned?: { name: string; email?: string | null } | null
+  // Customer address fields (fetched from Customer record)
+  customerCity?:    string | null
+  customerCountry?: string | null
+  customerStreet?:  string | null
   lineItems: Array<{
     id?: string
     sNo: number
@@ -363,8 +367,12 @@ function CoverPage({ q, logoDataUrl, arabicHeaderUrl, pdfSettings = {} }: { q: Q
         <View style={s.addrLeft}>
           <Text style={s.addrTo}>To,</Text>
           <Text style={s.addrCustomer}>{q.customerName}</Text>
-          <Text style={s.addrLine}>Po Box{'  '}{q.poBox || ''}</Text>
-          <Text style={s.addrLine}>Riyadh{'    '}Saudi Arabia</Text>
+          {(q.customerStreet || q.poBox) && (
+            <Text style={s.addrLine}>{q.customerStreet || `Po Box  ${q.poBox}`}</Text>
+          )}
+          <Text style={s.addrLine}>
+            {[q.customerCity, q.customerCountry].filter(Boolean).join('    ') || 'Saudi Arabia'}
+          </Text>
         </View>
         {/* Right: TRN / Date / Ref / Code */}
         <View style={s.addrRight}>

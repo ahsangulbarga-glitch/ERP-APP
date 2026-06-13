@@ -67,6 +67,31 @@ export async function GET(
 
   if (!quotation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // Fetch customer address from Customer record
+  let customerCity: string | null = null
+  let customerCountry: string | null = null
+  let customerStreet: string | null = null
+  try {
+    const cust = await db.customer.findFirst({
+      where: { customerName: quotation.customerName },
+      select: { primaryAddress: true },
+    })
+    if (cust?.primaryAddress) {
+      const addr = JSON.parse(cust.primaryAddress)
+      customerStreet  = addr.street  || null
+      customerCity    = addr.city    || null
+      customerCountry = addr.country || null
+    }
+  } catch { /* non-critical — fall back to poBox */ }
+
+  // Merge address into quotation object for PDF renderer
+  const quotationWithAddr = {
+    ...quotation,
+    customerCity,
+    customerCountry,
+    customerStreet,
+  }
+
   // PDF header priority: pdfHeaderDataUrl (full letterhead) → logoDataUrl → static fallback
   const logoDataUrl: string | null =
     (companySetting as any)?.pdfHeaderDataUrl ??
@@ -154,7 +179,7 @@ export async function GET(
     // Disable font hyphenation for Arabic (prevents broken syllables)
     Font.registerHyphenationCallback(word => [word])
 
-    const element = createElement(QuotationPDF, { quotation, logoDataUrl, arabicHeaderUrl, preparedByContacts, pdfSettings })
+    const element = createElement(QuotationPDF, { quotation: quotationWithAddr, logoDataUrl, arabicHeaderUrl, preparedByContacts, pdfSettings })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const buffer: Buffer = await renderToBuffer(element as any)
 
