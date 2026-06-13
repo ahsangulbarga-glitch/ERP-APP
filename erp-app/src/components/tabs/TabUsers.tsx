@@ -5,7 +5,7 @@ import { SessionUser, ROLE_LABELS, Role } from '@/types'
 import { canExportReport } from '@/lib/rbac'
 import {
   UserPlus, Pencil, Power, FileDown, Sheet, AlertTriangle,
-  Users, GitBranch, GitMerge, Plus, Trash2, ChevronDown, ChevronRight, Save,
+  Users, GitBranch, Plus, Trash2, ChevronDown, ChevronRight,
   CheckCircle2, Circle,
 } from 'lucide-react'
 
@@ -20,14 +20,6 @@ interface UserRow {
   managerId: string | null
   createdBy: string | null   // null = seed user (protected)
 }
-
-interface WorkflowStep {
-  id: string
-  process: string
-  stepOrder: number
-  label: string
-  approverRole: string | null
-  approverId: string | null
   isActive: boolean
 }
 
@@ -57,11 +49,9 @@ const ROLE_COLORS: Record<string, string> = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
-  const [sub, setSub] = useState<'users' | 'hierarchy' | 'workflows'>('users')
+  const [sub, setSub] = useState<'users' | 'hierarchy'>('users')
   const [users, setUsers]         = useState<UserRow[]>([])
   const [loading, setLoading]     = useState(true)
-  const [workflows, setWorkflows] = useState<WorkflowStep[]>([])
-  const [wLoading, setWLoading]   = useState(false)
 
   // Custom roles from DB
   type CRole = { id: string; roleKey: string; displayName: string; baseRole: string; color: string; isActive: boolean }
@@ -85,16 +75,7 @@ export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
     setLoading(false)
   }, [])
 
-  const loadWorkflows = useCallback(async () => {
-    setWLoading(true)
-    const res  = await fetch('/api/approval-workflows')
-    const data = res.ok ? await res.json().catch(() => []) : []
-    setWorkflows(Array.isArray(data) ? data : [])
-    setWLoading(false)
-  }, [])
-
   useEffect(() => { loadUsers() }, [loadUsers])
-  useEffect(() => { if (sub === 'workflows') loadWorkflows() }, [sub, loadWorkflows])
 
   // ── User CRUD ──────────────────────────────────────────────────────────────
   const openNew = () => {
@@ -211,9 +192,8 @@ export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
       {/* Sub-tab bar */}
       <div className="flex gap-1 p-1 rounded-xl bg-slate-100 w-fit">
         {[
-          { id: 'users',     label: 'Users',              icon: Users },
-          { id: 'hierarchy', label: 'Org Hierarchy',      icon: GitBranch },
-          { id: 'workflows', label: 'Approval Workflows', icon: GitMerge },
+          { id: 'users',     label: 'Users',         icon: Users },
+          { id: 'hierarchy', label: 'Org Hierarchy', icon: GitBranch },
         ].map(t => (
           <button key={t.id} onClick={() => setSub(t.id as typeof sub)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -302,13 +282,6 @@ export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
         <HierarchyTab users={users} currentUserId={currentUser.id} onRefresh={loadUsers} />
       )}
 
-      {/* ── Approval Workflows Tab ─────────────────────────────────────────── */}
-      {sub === 'workflows' && (
-        <WorkflowsTab
-          workflows={workflows} users={users}
-          loading={wLoading} onRefresh={loadWorkflows}
-        />
-      )}
 
       {/* ── Delete Confirm Modal ──────────────────────────────────────────── */}
       {confirmDelete && (
@@ -496,233 +469,3 @@ function HierarchyTab({
   )
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Approval Workflows Tab
-// ═══════════════════════════════════════════════════════════════════════════════
-function WorkflowsTab({
-  workflows, users, loading, onRefresh,
-}: { workflows: WorkflowStep[]; users: UserRow[]; loading: boolean; onRefresh: () => void }) {
-  const [activeProcess, setActiveProcess] = useState('quotation')
-  const [showAdd, setShowAdd]   = useState(false)
-  const [stepForm, setStepForm] = useState({
-    label: '', approverType: 'role', approverRole: 'P4_REGIONAL_MANAGER', approverId: '',
-  })
-  const [saving, setSaving] = useState(false)
-
-  const steps = workflows
-    .filter(w => w.process === activeProcess)
-    .sort((a, b) => a.stepOrder - b.stepOrder)
-
-  const [addError, setAddError] = useState('')
-
-  const addStep = async () => {
-    setAddError('')
-    setSaving(true)
-    // Always append AFTER the current highest stepOrder to avoid collisions on gaps
-    const nextOrder = steps.length > 0 ? Math.max(...steps.map(s => s.stepOrder)) + 1 : 1
-    const res = await fetch('/api/approval-workflows', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        process:      activeProcess,
-        stepOrder:    nextOrder,
-        label:        stepForm.label,
-        approverRole: stepForm.approverType === 'role' ? stepForm.approverRole : null,
-        approverId:   stepForm.approverType === 'user' ? stepForm.approverId  : null,
-      }),
-    })
-    setSaving(false)
-    if (!res.ok) {
-      try { const d = await res.json(); setAddError(d?.error || 'Failed to add step') } catch { setAddError('Failed to add step') }
-      return
-    }
-    setShowAdd(false)
-    setStepForm({ label: '', approverType: 'role', approverRole: 'P4_REGIONAL_MANAGER', approverId: '' })
-    onRefresh()
-  }
-
-  const deleteStep = async (id: string) => {
-    await fetch('/api/approval-workflows', {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    })
-    onRefresh()
-  }
-
-  const toggleStep = async (step: WorkflowStep) => {
-    await fetch('/api/approval-workflows', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: step.id, isActive: !step.isActive }),
-    })
-    onRefresh()
-  }
-
-  const proc = PROCESSES.find(p => p.id === activeProcess)!
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
-        Define the approval chain for each business process. Steps are executed in order — each approver must sign off before the next is notified.
-      </div>
-
-      <div className="flex gap-4 flex-wrap lg:flex-nowrap">
-        {/* Process list (left column) */}
-        <div className="w-full lg:w-56 shrink-0">
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            {PROCESSES.map(p => {
-              const count = workflows.filter(w => w.process === p.id && w.isActive).length
-              return (
-                <button key={p.id} onClick={() => { setActiveProcess(p.id); setShowAdd(false) }}
-                  className={`w-full flex items-center justify-between px-4 py-3 text-sm transition-colors border-b last:border-b-0 border-slate-100 ${
-                    activeProcess === p.id ? 'bg-slate-50 font-semibold' : 'hover:bg-slate-50'
-                  }`}>
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full flex-none" style={{ background: p.color }} />
-                    <span className={activeProcess === p.id ? 'text-slate-800' : 'text-slate-600'}>{p.label}</span>
-                  </div>
-                  {count > 0 && (
-                    <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
-                      style={{ background: `${p.color}18`, color: p.color }}>{count}</span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Steps (right column) */}
-        <div className="flex-1 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-base font-semibold text-slate-800">{proc.label}</h3>
-            <button onClick={() => setShowAdd(v => !v)}
-              className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg text-white transition-colors"
-              style={{ background: proc.color }}>
-              <Plus size={14} /> Add Step
-            </button>
-          </div>
-
-          {loading ? (
-            <div className="text-center py-8 text-slate-400 text-sm">Loading…</div>
-          ) : steps.length === 0 && !showAdd ? (
-            <div className="text-center py-10 bg-white rounded-xl border border-dashed border-slate-300">
-              <GitMerge size={28} className="mx-auto text-slate-300 mb-2" />
-              <p className="text-sm text-slate-500">No approval steps defined</p>
-              <p className="text-xs text-slate-400 mt-1">Click "Add Step" to build the workflow</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {steps.map((step, idx) => {
-                const assignee = step.approverId
-                  ? users.find(u => u.id === step.approverId)
-                  : null
-                const approverLabel = assignee
-                  ? `${assignee.name} (${ROLE_LABELS[assignee.role as Role] || assignee.role})`
-                  : step.approverRole
-                  ? ROLE_LABELS[step.approverRole as Role] || step.approverRole
-                  : '—'
-
-                return (
-                  <div key={step.id}
-                    className={`flex items-start gap-3 p-4 bg-white rounded-xl border transition-all ${
-                      step.isActive ? 'border-slate-200' : 'border-slate-100 opacity-50'
-                    }`}>
-                    {/* Step number */}
-                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-none text-white"
-                      style={{ background: step.isActive ? proc.color : '#94a3b8' }}>
-                      {idx + 1}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-slate-800">{step.label}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                          style={{ background: `${proc.color}15`, color: proc.color }}>
-                          {step.approverId ? 'Specific User' : 'By Role'}
-                        </span>
-                        <span className="text-xs text-slate-500">{approverLabel}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 flex-none">
-                      <button onClick={() => toggleStep(step)}
-                        className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
-                          step.isActive
-                            ? 'border-slate-200 text-slate-500 hover:bg-slate-50'
-                            : 'border-green-200 text-green-600 hover:bg-green-50'
-                        }`}>
-                        {step.isActive ? 'Disable' : 'Enable'}
-                      </button>
-                      <button onClick={() => deleteStep(step.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Add step form */}
-          {showAdd && (
-            <div className="bg-white rounded-xl border-2 border-dashed p-4 space-y-3"
-              style={{ borderColor: proc.color + '60' }}>
-              <p className="text-sm font-semibold text-slate-700">New Step — #{steps.length > 0 ? Math.max(...steps.map(s => s.stepOrder)) + 1 : 1}</p>
-              {addError && <p className="text-xs text-red-600 bg-red-50 px-3 py-2 rounded-lg">{addError}</p>}
-              <div>
-                <label className="text-xs font-medium text-slate-600">Step Label</label>
-                <input className="input-sm w-full mt-1" placeholder="e.g. Department Head Review"
-                  value={stepForm.label} onChange={e => setStepForm(f => ({ ...f, label: e.target.value }))} />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-slate-600">Assign approver by</label>
-                <div className="flex gap-2 mt-1">
-                  {[{ v: 'role', l: 'Role' }, { v: 'user', l: 'Specific Person' }].map(opt => (
-                    <button key={opt.v} onClick={() => setStepForm(f => ({ ...f, approverType: opt.v }))}
-                      className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                        stepForm.approverType === opt.v
-                          ? 'text-white border-transparent'
-                          : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                      }`}
-                      style={stepForm.approverType === opt.v ? { background: proc.color } : {}}>
-                      {opt.l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {stepForm.approverType === 'role' ? (
-                <div>
-                  <label className="text-xs font-medium text-slate-600">Approver Role</label>
-                  <select className="input-sm w-full mt-1"
-                    value={stepForm.approverRole}
-                    onChange={e => setStepForm(f => ({ ...f, approverRole: e.target.value }))}>
-                    {ROLE_OPTIONS.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                  </select>
-                </div>
-              ) : (
-                <div>
-                  <label className="text-xs font-medium text-slate-600">Approver Person</label>
-                  <select className="input-sm w-full mt-1"
-                    value={stepForm.approverId}
-                    onChange={e => setStepForm(f => ({ ...f, approverId: e.target.value }))}>
-                    <option value="">— Select person —</option>
-                    {users.filter(u => u.isActive).map(u => (
-                      <option key={u.id} value={u.id}>
-                        {u.name} — {ROLE_LABELS[u.role as Role] || u.role}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div className="flex gap-2 pt-1">
-                <button onClick={() => setShowAdd(false)} className="btn-outline flex-1 text-sm">Cancel</button>
-                <button onClick={addStep} disabled={saving || !stepForm.label}
-                  className="flex-1 text-sm py-2 rounded-lg font-medium text-white transition-colors disabled:opacity-50"
-                  style={{ background: proc.color }}>
-                  {saving ? 'Adding…' : 'Add Step'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
