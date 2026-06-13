@@ -6,7 +6,7 @@ import { canExportReport } from '@/lib/rbac'
 import {
   UserPlus, Pencil, Power, FileDown, Sheet, AlertTriangle,
   Users, GitBranch, Plus, Trash2, ChevronDown, ChevronRight,
-  CheckCircle2, Circle,
+  CheckCircle2, Circle, Shield, Check, X, ChevronUp,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -47,16 +47,56 @@ const ROLE_COLORS: Record<string, string> = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
-  const [sub, setSub] = useState<'users' | 'hierarchy'>('users')
+  const [sub, setSub] = useState<'users' | 'hierarchy' | 'roles'>('users')
   const [users, setUsers]         = useState<UserRow[]>([])
   const [loading, setLoading]     = useState(true)
 
   // Custom roles from DB
-  type CRole = { id: string; roleKey: string; displayName: string; baseRole: string; color: string; isActive: boolean }
-  const [customRoles, setCustomRoles] = useState<CRole[]>([])
-  useEffect(() => {
-    fetch('/api/roles').then(r => r.ok ? r.json() : []).then(d => setCustomRoles(Array.isArray(d) ? d.filter((r: CRole) => r.isActive) : []))
+  type CRole = { id: string; roleKey: string; displayName: string; baseRole: string; description?: string; color: string; isActive: boolean }
+  const [customRoles,  setCustomRoles]  = useState<CRole[]>([])
+  const [allRoles,     setAllRoles]     = useState<CRole[]>([])  // includes inactive, for the management tab
+  const [roleForm,     setRoleForm]     = useState({ displayName: '', baseRole: 'P6_KEY_ACCOUNT_ENGINEER', description: '', color: '#6366f1' })
+  const [editingRole,  setEditingRole]  = useState<CRole | null>(null)
+  const [roleSaving,   setRoleSaving]   = useState(false)
+  const [showRoleForm, setShowRoleForm] = useState(false)
+
+  const loadRoles = useCallback(async () => {
+    const res  = await fetch('/api/roles')
+    const data = res.ok ? await res.json() : []
+    if (Array.isArray(data)) {
+      setAllRoles(data)
+      setCustomRoles(data.filter((r: CRole) => r.isActive))
+    }
   }, [])
+
+  useEffect(() => { loadRoles() }, [loadRoles])
+
+  const saveRole = async () => {
+    if (!roleForm.displayName.trim()) return
+    setRoleSaving(true)
+    try {
+      const res = await fetch('/api/roles', {
+        method: editingRole ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingRole ? { id: editingRole.id, ...roleForm } : roleForm),
+      })
+      if (!res.ok) { const e = await res.json(); alert(e.error || 'Save failed'); return }
+      setShowRoleForm(false); setEditingRole(null)
+      setRoleForm({ displayName: '', baseRole: 'P6_KEY_ACCOUNT_ENGINEER', description: '', color: '#6366f1' })
+      loadRoles()
+    } catch { /* ignore */ } finally { setRoleSaving(false) }
+  }
+
+  const deleteRole = async (id: string) => {
+    if (!confirm('Delete this role? Users assigned to it will need reassigning.')) return
+    const res = await fetch('/api/roles', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    if (res.ok) loadRoles()
+  }
+
+  const toggleRoleActive = async (role: CRole) => {
+    await fetch('/api/roles', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: role.id, isActive: !role.isActive }) })
+    loadRoles()
+  }
 
   // User modal state
   const [showModal, setShowModal] = useState(false)
@@ -192,6 +232,7 @@ export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
         {[
           { id: 'users',     label: 'Users',         icon: Users },
           { id: 'hierarchy', label: 'Org Hierarchy', icon: GitBranch },
+          { id: 'roles',     label: 'Custom Roles',  icon: Shield },
         ].map(t => (
           <button key={t.id} onClick={() => setSub(t.id as typeof sub)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -280,6 +321,127 @@ export default function TabUsers({ user: currentUser }: { user: SessionUser }) {
         <HierarchyTab users={users} currentUserId={currentUser.id} onRefresh={loadUsers} />
       )}
 
+      {/* ── Custom Roles ─────────────────────────────────────────────────── */}
+      {sub === 'roles' && (
+        <div className="space-y-4 p-1">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Custom Roles</p>
+              <p className="text-xs text-slate-500 mt-0.5">Create roles that inherit permissions from a built-in role and appear in the user assignment dropdown.</p>
+            </div>
+            <button onClick={() => { setShowRoleForm(true); setEditingRole(null); setRoleForm({ displayName: '', baseRole: 'P6_KEY_ACCOUNT_ENGINEER', description: '', color: '#6366f1' }) }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white"
+              style={{ background: '#6366f1' }}>
+              <Plus size={14} /> New Role
+            </button>
+          </div>
+
+          {/* Create / Edit form */}
+          {showRoleForm && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-indigo-800">{editingRole ? 'Edit Role' : 'Create New Role'}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1 font-medium">Display Name *</label>
+                  <input className="form-input" placeholder="e.g. Senior Sales Engineer"
+                    value={roleForm.displayName} onChange={e => setRoleForm(f => ({ ...f, displayName: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1 font-medium">Inherits Permissions From *</label>
+                  <select className="form-input" value={roleForm.baseRole} onChange={e => setRoleForm(f => ({ ...f, baseRole: e.target.value }))}>
+                    <option value="P1_CEO">CEO</option>
+                    <option value="P2_ADMIN">Admin</option>
+                    <option value="P3_KEY_ACCOUNT_MANAGER">Key Account Manager</option>
+                    <option value="P4_REGIONAL_MANAGER">Divisional Manager</option>
+                    <option value="P5_SALES_MANAGER">Sales Manager</option>
+                    <option value="P6_KEY_ACCOUNT_ENGINEER">Key Account Engineer</option>
+                    <option value="P7_INSIDE_SALES_ENGINEER">Inside Sales Engineer</option>
+                    <option value="P8_ACCOUNTANT">Accountant</option>
+                    <option value="P9_HR">HR</option>
+                    <option value="P10_LOGISTICS_MANAGER">Logistics Manager</option>
+                    <option value="P11_PURCHASE_MANAGER">Purchase Manager</option>
+                    <option value="P12_WAREHOUSE_MANAGER">Warehouse Manager</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1 font-medium">Description</label>
+                  <input className="form-input" placeholder="Brief description" value={roleForm.description} onChange={e => setRoleForm(f => ({ ...f, description: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1 font-medium">Badge Color</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={roleForm.color} onChange={e => setRoleForm(f => ({ ...f, color: e.target.value }))}
+                      className="w-10 h-9 rounded cursor-pointer border border-slate-200 p-0.5 bg-white" />
+                    <span className="text-xs text-slate-500">Choose a badge color</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={saveRole} disabled={roleSaving}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                  style={{ background: '#6366f1' }}>
+                  <Check size={13} /> {roleSaving ? 'Saving…' : editingRole ? 'Update' : 'Create Role'}
+                </button>
+                <button onClick={() => { setShowRoleForm(false); setEditingRole(null) }}
+                  className="px-4 py-2 rounded-lg text-sm text-slate-500 border border-slate-200 hover:bg-slate-50">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Roles list */}
+          {allRoles.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-slate-200 py-12 text-center">
+              <Shield size={28} className="text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-medium text-slate-500">No custom roles yet</p>
+              <p className="text-xs text-slate-400 mt-1">Click "New Role" to create your first custom role</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {allRoles.map(role => (
+                <div key={role.id}
+                  className="flex items-center justify-between px-4 py-3 rounded-xl border bg-white hover:border-slate-300 transition-colors"
+                  style={{ borderColor: role.isActive ? '#e2e8f0' : '#fee2e2', opacity: role.isActive ? 1 : 0.7 }}>
+                  <div className="flex items-center gap-3">
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold text-white" style={{ background: role.color }}>
+                      {role.displayName}
+                    </span>
+                    <div>
+                      <p className="text-xs text-slate-500">
+                        Inherits: <span className="font-medium text-slate-700">{role.baseRole.replace(/^P\d+_/, '').replace(/_/g, ' ')}</span>
+                        {' · '}<span className="font-mono text-slate-400 text-[10px]">{role.roleKey}</span>
+                      </p>
+                      {role.description && <p className="text-xs text-slate-400 mt-0.5">{role.description}</p>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={() => toggleRoleActive(role)}
+                      className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${role.isActive ? 'bg-green-50 text-green-700 border-green-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                      {role.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                    <button onClick={() => { setEditingRole(role); setRoleForm({ displayName: role.displayName, baseRole: role.baseRole, description: role.description || '', color: role.color }); setShowRoleForm(true) }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50">
+                      <Pencil size={13} />
+                    </button>
+                    <button onClick={() => deleteRole(role.id)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50">
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 space-y-1">
+            <p className="font-semibold">How custom roles work:</p>
+            <p>• Custom roles <strong>inherit all permissions</strong> from the built-in role you select</p>
+            <p>• They appear in the role dropdown when creating or editing users</p>
+            <p>• Deactivating hides a role from new assignments but doesn{"'"}t affect existing users</p>
+          </div>
+        </div>
+      )}
 
       {/* ── Delete Confirm Modal ──────────────────────────────────────────── */}
       {confirmDelete && (
