@@ -72,8 +72,41 @@ function Toggle({ label, desc, checked, onChange }: {
   )
 }
 
-/** Compress/resize an image file to a base64 data URL (JPEG, max given dimensions) */
-async function compressImage(file: File, maxW: number, maxH: number, quality = 0.85): Promise<string> {
+/** Render first page of a PDF file to a JPEG data URL via pdf.js */
+async function pdfToImage(file: File, maxW: number, maxH: number, quality = 0.88): Promise<string> {
+  const arrayBuffer = await file.arrayBuffer()
+  // Dynamically import pdfjs-dist (client-only)
+  const pdfjsLib = await import('pdfjs-dist')
+  // Point worker to local bundle
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+
+  const pdf      = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const page     = await pdf.getPage(1)
+  const viewport = page.getViewport({ scale: 1 })
+
+  // Scale so the rendered page fits within maxW × maxH
+  const scale    = Math.min(maxW / viewport.width, maxH / viewport.height, 3) // max 3× to avoid huge canvases
+  const scaled   = page.getViewport({ scale })
+
+  const canvas   = document.createElement('canvas')
+  canvas.width   = Math.round(scaled.width)
+  canvas.height  = Math.round(scaled.height)
+
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  await page.render({ canvasContext: ctx, viewport: scaled }).promise
+  return canvas.toDataURL('image/jpeg', quality)
+}
+
+/** Compress/resize an image file OR convert a PDF page 1 → JPEG data URL */
+async function processUpload(file: File, maxW: number, maxH: number, quality = 0.88): Promise<string> {
+  // PDF: render first page to canvas
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    return pdfToImage(file, maxW, maxH, quality)
+  }
+  // Image: resize via canvas
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error('File read failed'))
@@ -82,7 +115,6 @@ async function compressImage(file: File, maxW: number, maxH: number, quality = 0
       img.onerror = () => reject(new Error('Image load failed'))
       img.onload = () => {
         let { width, height } = img
-        // Scale down if needed, keep aspect ratio
         if (width > maxW || height > maxH) {
           const scale = Math.min(maxW / width, maxH / height)
           width  = Math.round(width  * scale)
@@ -102,6 +134,9 @@ async function compressImage(file: File, maxW: number, maxH: number, quality = 0
     reader.readAsDataURL(file)
   })
 }
+
+// Keep alias for logo uploads
+const compressImage = processUpload
 
 export default function TabSettings({ user }: Props) {
   const isAdmin = canWrite(user.role, 'settings')
@@ -427,7 +462,7 @@ export default function TabSettings({ user }: Props) {
                       {isAdmin && (
                         <label className="flex items-center gap-1 text-xs px-2 py-0.5 rounded text-indigo-600 hover:bg-indigo-50 border border-indigo-200 cursor-pointer">
                           <ImagePlus size={10} /> Replace
-                          <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp"
+                          <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.webp"
                             onChange={async e => {
                               const file = e.target.files?.[0]; if (!file) return
                               if (file.size > 10 * 1024 * 1024) { toastError('Image must be under 10 MB'); return }
@@ -446,10 +481,10 @@ export default function TabSettings({ user }: Props) {
                     isAdmin ? 'border-slate-300 text-slate-500 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700' : 'border-slate-200 text-slate-400 cursor-not-allowed'
                   }`}>
                     <ImagePlus size={22} />
-                    <span className="font-medium">{isAdmin ? 'Upload PDF Letterhead (PNG, JPG — max 5 MB)' : 'No letterhead uploaded — using default'}</span>
+                    <span className="font-medium">{isAdmin ? 'Upload PDF Letterhead (PDF, PNG, JPG — max 10 MB)' : 'No letterhead uploaded — using default'}</span>
                     <span className="text-xs opacity-70">This replaces the default DLIT header on all PDF documents</span>
                     {isAdmin && (
-                      <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp"
+                      <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.webp"
                         onChange={async e => {
                           const file = e.target.files?.[0]; if (!file) return
                           if (file.size > 10 * 1024 * 1024) { toastError('Image must be under 10 MB'); return }
