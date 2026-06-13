@@ -20,8 +20,6 @@ interface UserRow {
   managerId: string | null
   createdBy: string | null   // null = seed user (protected)
 }
-  isActive: boolean
-}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ROLE_OPTIONS: Role[] = [
