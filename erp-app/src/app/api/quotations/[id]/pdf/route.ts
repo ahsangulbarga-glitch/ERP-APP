@@ -41,7 +41,12 @@ export async function GET(
         lineItems: { orderBy: { sNo: 'asc' } },
       },
     }),
-    db.companySetting.findFirst({ where: { tenantId }, select: { logoDataUrl: true, pdfHeaderDataUrl: true, preparedByContacts: true } }).catch(() => null),
+    db.companySetting.findFirst({ where: { tenantId }, select: {
+      logoDataUrl: true, pdfHeaderDataUrl: true, preparedByContacts: true,
+      pdfCompanyFullName: true, pdfClosingText: true,
+      pdfSignatoryName: true, pdfSignatoryTitle: true, pdfSignatoryCc: true,
+      pdfLegalNotice: true, pdfFooterAddress: true, pdfFooterEmails: true,
+    }}).catch(() => null),
   ])
 
   if (!quotation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -55,12 +60,25 @@ export async function GET(
   const arabicFontNormal  = toDataUrl('Amiri-Regular.ttf','font/truetype')
   const arabicFontBold    = toDataUrl('Amiri-Regular.ttf','font/truetype')
 
-  // Parse prepared-by contacts from company settings (fall back to null = use PDF defaults)
+  // Parse prepared-by contacts
   let preparedByContacts: { name: string; title: string; email: string; contact: string }[] | null = null
   try {
     const raw = (companySetting as any)?.preparedByContacts
     if (raw) preparedByContacts = JSON.parse(raw)
   } catch { /* use defaults */ }
+
+  // Collect all PDF customisation fields (pass undefined if not set so PDF uses defaults)
+  const cs = companySetting as any
+  const pdfSettings = {
+    companyFullName: cs?.pdfCompanyFullName  || undefined,
+    closingText:     cs?.pdfClosingText      || undefined,
+    signatoryName:   cs?.pdfSignatoryName    || undefined,
+    signatoryTitle:  cs?.pdfSignatoryTitle   || undefined,
+    signatoryCc:     cs?.pdfSignatoryCc      || undefined,
+    legalNotice:     cs?.pdfLegalNotice      || undefined,
+    footerAddress:   cs?.pdfFooterAddress    || undefined,
+    footerEmails:    cs?.pdfFooterEmails     || undefined,
+  }
 
   try {
     const { renderToBuffer, Font } = await import('@react-pdf/renderer')
@@ -79,7 +97,7 @@ export async function GET(
     // Disable font hyphenation for Arabic (prevents broken syllables)
     Font.registerHyphenationCallback(word => [word])
 
-    const element = createElement(QuotationPDF, { quotation, logoDataUrl, arabicHeaderUrl, preparedByContacts })
+    const element = createElement(QuotationPDF, { quotation, logoDataUrl, arabicHeaderUrl, preparedByContacts, pdfSettings })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const buffer: Buffer = await renderToBuffer(element as any)
 

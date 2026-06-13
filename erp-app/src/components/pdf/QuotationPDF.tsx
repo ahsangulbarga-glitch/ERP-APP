@@ -329,21 +329,14 @@ function PageHeader({ logoDataUrl }: { logoDataUrl?: string | null; arabicHeader
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE FOOTER  — fixed at bottom
 // ─────────────────────────────────────────────────────────────────────────────
-function PageFooter() {
+function PageFooter({ address, emails }: { address?: string; emails?: string }) {
+  const footerAddr   = address || '17, 3rd Floor, 7202, Saeed Ibn Zayd Rd,\nQurtubah, 13247, Riyadh, KSA'
+  const footerEmails = emails  || 'sales@dynamicline.com.sa\nomair@dynamicline.com.sa'
   return (
     <View style={s.pageFooter} fixed>
-      <Text style={s.footerLeft}>
-        17, 3rd Floor, 7202, Saeed Ibn Zayd Rd,{'\n'}
-        Qurtubah, 13247, Riyadh, KSA
-      </Text>
-      <Text
-        style={s.footerCenter}
-        render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
-      />
-      <Text style={s.footerRight}>
-        sales@dynamicline.com.sa{'\n'}
-        omair@dynamicline.com.sa
-      </Text>
+      <Text style={s.footerLeft}>{footerAddr}</Text>
+      <Text style={s.footerCenter} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
+      <Text style={s.footerRight}>{footerEmails}</Text>
     </View>
   )
 }
@@ -351,7 +344,7 @@ function PageFooter() {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 1 — COVER LETTER
 // ─────────────────────────────────────────────────────────────────────────────
-function CoverPage({ q, logoDataUrl, arabicHeaderUrl }: { q: QuotationForPDF; logoDataUrl?: string | null; arabicHeaderUrl?: string | null }) {
+function CoverPage({ q, logoDataUrl, arabicHeaderUrl, pdfSettings = {} }: { q: QuotationForPDF; logoDataUrl?: string | null; arabicHeaderUrl?: string | null; pdfSettings?: PdfSettings }) {
   const validity     = q.validityDays ?? 30
   const deliveryText = q.deliveryWeeks
     ? `${q.deliveryWeeks} Weeks from material approval or PO (whichever is later)`
@@ -453,7 +446,7 @@ function CoverPage({ q, logoDataUrl, arabicHeaderUrl }: { q: QuotationForPDF; lo
 
       {/* ── Closing ── */}
       <Text style={s.para}>
-        We trust you will find our offer most competitive. If you need any further information, please feel free to contact us.
+        {pdfSettings.closingText || 'We trust you will find our offer most competitive. If you need any further information, please feel free to contact us.'}
       </Text>
       <Text style={s.para}>Thank you and assuring you of our best services at all times.</Text>
 
@@ -461,19 +454,21 @@ function CoverPage({ q, logoDataUrl, arabicHeaderUrl }: { q: QuotationForPDF; lo
       <View style={s.signWrap}>
         <Text style={s.signLine}>Yours Faithfully,</Text>
         <Text style={s.signLine}>
-          For <Text style={s.signBold}>DYNAMIC LINE INTERNATIONAL TRADING,</Text>
+          For <Text style={s.signBold}>{pdfSettings.companyFullName || 'DYNAMIC LINE INTERNATIONAL TRADING'},</Text>
         </Text>
-        <Text style={s.signName}>OMAIR AZMI</Text>
-        <Text style={s.signTitle}>Manager, Water Division</Text>
-        <Text style={s.signCC}>cc - Mr. Mohammed Afaque Ahmed, CEO</Text>
+        <Text style={s.signName}>{pdfSettings.signatoryName  || 'OMAIR AZMI'}</Text>
+        <Text style={s.signTitle}>{pdfSettings.signatoryTitle || 'Manager, Water Division'}</Text>
+        {(pdfSettings.signatoryCc || 'Mr. Mohammed Afaque Ahmed, CEO') && (
+          <Text style={s.signCC}>cc - {pdfSettings.signatoryCc || 'Mr. Mohammed Afaque Ahmed, CEO'}</Text>
+        )}
       </View>
 
       {/* Legal notice */}
       <Text style={s.legalText}>
-        THIS OFFER IS LEGAL WITHOUT SIGNATURE DURING ELECTRONIC TRANSMISSION
+        {pdfSettings.legalNotice || 'THIS OFFER IS LEGAL WITHOUT SIGNATURE DURING ELECTRONIC TRANSMISSION'}
       </Text>
 
-      <PageFooter />
+      <PageFooter address={pdfSettings.footerAddress} emails={pdfSettings.footerEmails} />
     </Page>
   )
 }
@@ -483,8 +478,19 @@ function CoverPage({ q, logoDataUrl, arabicHeaderUrl }: { q: QuotationForPDF; lo
 // ─────────────────────────────────────────────────────────────────────────────
 type PreparedContact = { name: string; title?: string; email: string; contact: string }
 
+type PdfSettings = {
+  companyFullName?: string
+  closingText?:     string
+  signatoryName?:   string
+  signatoryTitle?:  string
+  signatoryCc?:     string
+  legalNotice?:     string
+  footerAddress?:   string
+  footerEmails?:    string
+}
+
 function ItemsPage({
-  q, subtotal, discount, net, logoDataUrl, arabicHeaderUrl, preparedByContacts,
+  q, subtotal, discount, net, logoDataUrl, arabicHeaderUrl, preparedByContacts, pdfSettings = {},
 }: {
   q: QuotationForPDF
   subtotal: number
@@ -493,6 +499,7 @@ function ItemsPage({
   logoDataUrl?: string | null
   arabicHeaderUrl?: string | null
   preparedByContacts?: PreparedContact[] | null
+  pdfSettings?: PdfSettings
 }) {
   // Use custom contacts from settings if provided; otherwise fall back to hardcoded defaults
   const preparedBy: PreparedContact[] = (preparedByContacts && preparedByContacts.length > 0)
@@ -647,7 +654,7 @@ function ItemsPage({
         </View>
       ))}
 
-      <PageFooter />
+      <PageFooter address={pdfSettings.footerAddress} emails={pdfSettings.footerEmails} />
     </Page>
   )
 }
@@ -660,11 +667,13 @@ export function QuotationPDF({
   logoDataUrl,
   arabicHeaderUrl,
   preparedByContacts,
+  pdfSettings,
 }: {
   quotation: QuotationForPDF
   logoDataUrl?: string | null
   arabicHeaderUrl?: string | null
   preparedByContacts?: PreparedContact[] | null
+  pdfSettings?: PdfSettings
 }) {
   const items    = q.lineItems.filter(li => li.itemType !== 'header')
   const subtotal = items.reduce((sum, li) => sum + Number(li.amount), 0) || Number(q.amountSar)
@@ -680,10 +689,10 @@ export function QuotationPDF({
       author="Dynamic Line International Trading"
       subject={q.subject || q.projectName}
     >
-      <CoverPage q={q} logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl} />
+      <CoverPage q={q} logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl} pdfSettings={pdfSettings} />
       <ItemsPage q={q} subtotal={subtotal} discount={discount} net={net}
         logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl}
-        preparedByContacts={preparedByContacts} />
+        preparedByContacts={preparedByContacts} pdfSettings={pdfSettings} />
     </Document>
   )
 }

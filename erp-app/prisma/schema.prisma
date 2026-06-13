@@ -679,6 +679,16 @@ model CompanySetting {
   logoDataUrl         String?                // base64 data-URL of company logo
   pdfHeaderDataUrl    String?                // base64 data-URL of full PDF letterhead header image
   preparedByContacts  String?                // JSON: [{name,title,email,contact}] — shown in quotation PDF footer
+  // ── PDF Closing / Signature block ────────────────────────────────────────────
+  pdfCompanyFullName  String?                // e.g. "DYNAMIC LINE INTERNATIONAL TRADING"
+  pdfClosingText      String?                // "We trust you will find our offer..."
+  pdfSignatoryName    String?                // "OMAIR AZMI"
+  pdfSignatoryTitle   String?                // "Manager, Water Division"
+  pdfSignatoryCc      String?                // "Mr. Mohammed Afaque Ahmed, CEO"
+  pdfLegalNotice      String?                // "THIS OFFER IS LEGAL WITHOUT SIGNATURE..."
+  // ── PDF Footer ───────────────────────────────────────────────────────────────
+  pdfFooterAddress    String?                // Left column — company address (multiline)
+  pdfFooterEmails     String?                // Right column — contact emails (newline-separated)
   updatedAt        DateTime @updatedAt
   updatedBy        String?
 }

@@ -668,6 +668,85 @@ export default function TabSettings({ user }: Props) {
             </div>
           </div>
 
+          {/* ── PDF Closing / Signature Block ── */}
+          <div className="rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              ✍️ PDF Closing &amp; Signature Block
+              <p className="text-xs font-normal text-slate-500 mt-0.5 normal-case">Appears at the bottom of the quotation cover page.</p>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="form-label">Company Full Name (in signature)</label>
+                <input className="form-input" placeholder="DYNAMIC LINE INTERNATIONAL TRADING"
+                  value={(company as any).pdfCompanyFullName ?? ''}
+                  onChange={e => setCompany(c => ({ ...c, pdfCompanyFullName: e.target.value } as any))}
+                  disabled={!isAdmin} />
+              </div>
+              <div className="col-span-2">
+                <label className="form-label">Closing Paragraph</label>
+                <textarea rows={2} className="form-input resize-none"
+                  placeholder="We trust you will find our offer most competitive..."
+                  value={(company as any).pdfClosingText ?? ''}
+                  onChange={e => setCompany(c => ({ ...c, pdfClosingText: e.target.value } as any))}
+                  disabled={!isAdmin} />
+              </div>
+              <div>
+                <label className="form-label">Signatory Name</label>
+                <input className="form-input" placeholder="OMAIR AZMI"
+                  value={(company as any).pdfSignatoryName ?? ''}
+                  onChange={e => setCompany(c => ({ ...c, pdfSignatoryName: e.target.value } as any))}
+                  disabled={!isAdmin} />
+              </div>
+              <div>
+                <label className="form-label">Signatory Title</label>
+                <input className="form-input" placeholder="Manager, Water Division"
+                  value={(company as any).pdfSignatoryTitle ?? ''}
+                  onChange={e => setCompany(c => ({ ...c, pdfSignatoryTitle: e.target.value } as any))}
+                  disabled={!isAdmin} />
+              </div>
+              <div className="col-span-2">
+                <label className="form-label">CC Line</label>
+                <input className="form-input" placeholder="Mr. Mohammed Afaque Ahmed, CEO"
+                  value={(company as any).pdfSignatoryCc ?? ''}
+                  onChange={e => setCompany(c => ({ ...c, pdfSignatoryCc: e.target.value } as any))}
+                  disabled={!isAdmin} />
+              </div>
+              <div className="col-span-2">
+                <label className="form-label">Legal Notice</label>
+                <input className="form-input" placeholder="THIS OFFER IS LEGAL WITHOUT SIGNATURE DURING ELECTRONIC TRANSMISSION"
+                  value={(company as any).pdfLegalNotice ?? ''}
+                  onChange={e => setCompany(c => ({ ...c, pdfLegalNotice: e.target.value } as any))}
+                  disabled={!isAdmin} />
+              </div>
+            </div>
+          </div>
+
+          {/* ── PDF Footer ── */}
+          <div className="rounded-xl border border-slate-200 overflow-hidden">
+            <div className="px-4 py-2.5 text-xs font-semibold text-slate-600 uppercase tracking-wide" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              📄 PDF Page Footer
+              <p className="text-xs font-normal text-slate-500 mt-0.5 normal-case">Appears at the bottom of every PDF page (left = address, right = emails).</p>
+            </div>
+            <div className="p-4 grid grid-cols-2 gap-3">
+              <div>
+                <label className="form-label">Footer Address (left side)</label>
+                <textarea rows={2} className="form-input resize-none"
+                  placeholder={'17, 3rd Floor, 7202, Saeed Ibn Zayd Rd,\nQurtubah, 13247, Riyadh, KSA'}
+                  value={(company as any).pdfFooterAddress ?? ''}
+                  onChange={e => setCompany(c => ({ ...c, pdfFooterAddress: e.target.value } as any))}
+                  disabled={!isAdmin} />
+              </div>
+              <div>
+                <label className="form-label">Footer Emails (right side, one per line)</label>
+                <textarea rows={2} className="form-input resize-none"
+                  placeholder={'sales@dynamicline.com.sa\nomair@dynamicline.com.sa'}
+                  value={(company as any).pdfFooterEmails ?? ''}
+                  onChange={e => setCompany(c => ({ ...c, pdfFooterEmails: e.target.value } as any))}
+                  disabled={!isAdmin} />
+              </div>
+            </div>
+          </div>
+
           {/* ── Prepared By Contacts ── */}
           <PreparedByEditor
             contacts={(() => { try { return JSON.parse((company as any).preparedByContacts || '[]') } catch { return [] } })()}
