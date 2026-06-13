@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
+
 }
 
 model Tenant {
@@ -27,6 +28,13 @@ model User {
   email            String
   role             String
   pinHash          String
+  passwordHash     String?
+  passwordResetToken  String?
+  passwordResetExpiry DateTime?
+  emailVerified    Boolean            @default(false)
+  lastLoginAt      DateTime?
+  failedLoginAttempts Int             @default(0)
+  lockedUntil      DateTime?
   isActive         Boolean            @default(true)
   isSuperAdmin     Boolean            @default(false)
   createdAt        DateTime           @default(now())
@@ -632,6 +640,23 @@ model SalesTarget {
   @@index([tenantId])
 }
 
+model CustomRole {
+  id          String   @id @default(cuid())
+  tenantId    String
+  roleKey     String   // stored in User.role e.g. "CUSTOM_SALES_REP"
+  displayName String   // shown in UI e.g. "Sales Representative"
+  baseRole    String   // inherits RBAC from this built-in role e.g. "P6_KEY_ACCOUNT_ENGINEER"
+  description String?
+  color       String   @default("#6366f1") // badge color in UI
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdBy   String?
+
+  @@unique([tenantId, roleKey])
+  @@index([tenantId])
+}
+
 model CompanySetting {
   id               String   @id @default(cuid())
   tenantId         String   @unique
@@ -651,8 +676,8 @@ model CompanySetting {
   taxName          String   @default("VAT")            // e.g. "VAT", "GST", "Sales Tax"
   taxNumberLabel   String   @default("VAT Number")     // e.g. "TRN", "GST No.", "EIN"
   // ── Branding ─────────────────────────────────────────────────────────────────
-  logoDataUrl      String?                              // base64 data-URL of company logo
-  pdfHeaderDataUrl String?                              // base64 data-URL of full PDF letterhead header image
+  logoDataUrl      String?                   // base64 data-URL of company logo
+  pdfHeaderDataUrl String?                   // base64 data-URL of full PDF letterhead header image
   updatedAt        DateTime @updatedAt
   updatedBy        String?
 }
@@ -717,7 +742,7 @@ model ExpenseClaim {
   expenseDate     DateTime
   receiptRef      String?
   projectRef      String?
-  receiptFile     String?                              // base64 JSON of uploaded invoice/receipt copy
+  receiptFile     String?                   // base64 JSON of uploaded invoice/receipt copy
   status          String    @default("Pending")
   approvalStep    Int       @default(1)
   approvalHistory String?
@@ -757,9 +782,9 @@ model SalesOrder {
   approvedAt      DateTime?
   rejectionNote   String?
   // ── Customer PO & supporting documents ──────────────────────────────────────
-  customerPOFile      String?      // JSON: {name, type, size, data} for the customer PO scan/PDF
-  customerPOFileName  String?      // Convenience: file name for display
-  attachments         String?      // JSON array of {name, type, size, data} — supporting docs
+  customerPOFile      String?  // JSON: {name, type, size, data} for the customer PO scan/PDF
+  customerPOFileName  String?             // Convenience: file name for display
+  attachments         String?  // JSON array of {name, type, size, data} — supporting docs
   procurementTriggered  Boolean    @default(false)  // true once SO approval has notified Procurement
   procurementPoNumber   String?    // the auto-seeded Supplier PO number
   createdBy       String?

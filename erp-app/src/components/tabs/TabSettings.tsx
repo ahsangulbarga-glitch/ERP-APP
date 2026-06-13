@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { SessionUser, CompanySetting, PublicHoliday, ROLE_LABELS } from '@/types'
 import { canWrite } from '@/lib/rbac'
 import { toastSuccess, toastError } from '@/components/shared/Toast'
-import { Building2, Bell, Calendar, Plus, Trash2, Save, GitBranch, Edit2, X, ChevronUp, ChevronDown, Globe, ImagePlus } from 'lucide-react'
+import { Building2, Bell, Calendar, Plus, Trash2, Save, GitBranch, Edit2, X, ChevronUp, ChevronDown, Globe, ImagePlus, Shield, Pencil, Check } from 'lucide-react'
 import { COUNTRY_TAX_PRESETS, COUNTRY_LIST } from '@/lib/taxConfig'
 
 interface Props { user: SessionUser }
@@ -14,7 +14,8 @@ const SUB_TABS = [
   { id: 'tax',           label: 'Tax & Region',    icon: Globe      },
   { id: 'notifications', label: 'Notifications',   icon: Bell       },
   { id: 'calendar',      label: 'Calendar',        icon: Calendar   },
-  { id: 'workflows',     label: 'Workflows',        icon: GitBranch  },
+  { id: 'workflows',     label: 'Workflows',       icon: GitBranch  },
+  { id: 'roles',         label: 'Custom Roles',    icon: Shield     },
 ]
 
 const PROCESSES: { id: string; label: string; color: string; bg: string }[] = [
@@ -90,7 +91,53 @@ export default function TabSettings({ user }: Props) {
   const [hName,    setHName]    = useState('')
   const [hSaving,  setHSaving]  = useState(false)
 
-  // ── Workflows ───────────────────────────────────────────────────────────────
+  // ── Custom Roles ─────────────────────────────────────────────────────────────
+  type CustomRole = { id: string; roleKey: string; displayName: string; baseRole: string; description?: string; color: string; isActive: boolean }
+  const [customRoles,    setCustomRoles]    = useState<CustomRole[]>([])
+  const [roleForm,       setRoleForm]       = useState({ displayName: '', baseRole: 'P6_KEY_ACCOUNT_ENGINEER', description: '', color: '#6366f1' })
+  const [editingRole,    setEditingRole]    = useState<CustomRole | null>(null)
+  const [roleSaving,     setRoleSaving]     = useState(false)
+  const [showRoleForm,   setShowRoleForm]   = useState(false)
+
+  const loadCustomRoles = useCallback(async () => {
+    try {
+      const res = await fetch('/api/roles')
+      if (res.ok) setCustomRoles(await res.json())
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => { if (sub === 'roles') loadCustomRoles() }, [sub, loadCustomRoles])
+
+  const saveRole = async () => {
+    if (!roleForm.displayName.trim()) { toastError('Role name is required'); return }
+    setRoleSaving(true)
+    try {
+      const res = await fetch('/api/roles', {
+        method: editingRole ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingRole ? { id: editingRole.id, ...roleForm } : roleForm),
+      })
+      if (!res.ok) { const e = await res.json(); toastError(e.error || 'Save failed'); return }
+      toastSuccess(editingRole ? 'Role updated' : 'Role created')
+      setShowRoleForm(false); setEditingRole(null)
+      setRoleForm({ displayName: '', baseRole: 'P6_KEY_ACCOUNT_ENGINEER', description: '', color: '#6366f1' })
+      loadCustomRoles()
+    } catch { toastError('Save failed') } finally { setRoleSaving(false) }
+  }
+
+  const deleteRole = async (id: string) => {
+    if (!confirm('Delete this custom role? Users assigned to it will need a new role.')) return
+    const res = await fetch('/api/roles', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    if (res.ok) { toastSuccess('Role deleted'); loadCustomRoles() }
+    else { const e = await res.json(); toastError(e.error || 'Delete failed') }
+  }
+
+  const toggleRoleActive = async (role: CustomRole) => {
+    const res = await fetch('/api/roles', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: role.id, isActive: !role.isActive }) })
+    if (res.ok) loadCustomRoles()
+  }
+
+  // ── Workflows ─────────────────────────────────────────────────────────────────
   const [wfSteps,   setWfSteps]   = useState<WfStep[]>([])
   const [wfProcess, setWfProcess] = useState('quotation')
   const [wfModal,   setWfModal]   = useState(false)
@@ -886,6 +933,143 @@ export default function TabSettings({ user }: Props) {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Custom Roles ── */}
+      {sub === 'roles' && (
+        <div className="space-y-5">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Custom Roles</p>
+              <p className="text-xs text-slate-500 mt-0.5">Create roles that inherit permissions from a built-in role. Assign them to users just like any standard role.</p>
+            </div>
+            {isAdmin && (
+              <button onClick={() => { setShowRoleForm(true); setEditingRole(null); setRoleForm({ displayName: '', baseRole: 'P6_KEY_ACCOUNT_ENGINEER', description: '', color: '#6366f1' }) }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-white transition-colors"
+                style={{ background: '#6366f1' }}>
+                <Plus size={14} /> New Role
+              </button>
+            )}
+          </div>
+
+          {/* Create / Edit form */}
+          {showRoleForm && isAdmin && (
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 space-y-3">
+              <p className="text-sm font-semibold text-indigo-800">{editingRole ? 'Edit Role' : 'Create New Role'}</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="form-label">Role Display Name *</label>
+                  <input className="form-input" placeholder="e.g. Senior Sales Engineer"
+                    value={roleForm.displayName} onChange={e => setRoleForm(f => ({ ...f, displayName: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Inherits Permissions From *</label>
+                  <select className="form-input" value={roleForm.baseRole} onChange={e => setRoleForm(f => ({ ...f, baseRole: e.target.value }))}>
+                    <option value="P1_CEO">CEO</option>
+                    <option value="P2_ADMIN">Admin</option>
+                    <option value="P3_KEY_ACCOUNT_MANAGER">Key Account Manager</option>
+                    <option value="P4_REGIONAL_MANAGER">Divisional Manager</option>
+                    <option value="P5_SALES_MANAGER">Sales Manager</option>
+                    <option value="P6_KEY_ACCOUNT_ENGINEER">Key Account Engineer</option>
+                    <option value="P7_INSIDE_SALES_ENGINEER">Inside Sales Engineer</option>
+                    <option value="P8_ACCOUNTANT">Accountant</option>
+                    <option value="P9_HR">HR</option>
+                    <option value="P10_LOGISTICS_MANAGER">Logistics Manager</option>
+                    <option value="P11_PURCHASE_MANAGER">Purchase Manager</option>
+                    <option value="P12_WAREHOUSE_MANAGER">Warehouse Manager</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="form-label">Description</label>
+                  <input className="form-input" placeholder="Brief description of this role"
+                    value={roleForm.description} onChange={e => setRoleForm(f => ({ ...f, description: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Badge Color</label>
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={roleForm.color} onChange={e => setRoleForm(f => ({ ...f, color: e.target.value }))}
+                      className="w-10 h-9 rounded cursor-pointer border border-slate-200 p-0.5 bg-white" />
+                    <span className="text-xs text-slate-500">Choose a color for the role badge</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <button onClick={saveRole} disabled={roleSaving}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-50"
+                  style={{ background: '#6366f1' }}>
+                  <Check size={13} /> {roleSaving ? 'Saving…' : editingRole ? 'Update Role' : 'Create Role'}
+                </button>
+                <button onClick={() => { setShowRoleForm(false); setEditingRole(null) }}
+                  className="px-4 py-2 rounded-lg text-sm text-slate-500 border border-slate-200 hover:bg-slate-50 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Roles list */}
+          {customRoles.length === 0 ? (
+            <div className="rounded-xl border-2 border-dashed border-slate-200 py-12 text-center">
+              <Shield size={28} className="text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-medium text-slate-500">No custom roles yet</p>
+              <p className="text-xs text-slate-400 mt-1">Click "New Role" to create your first custom role</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {customRoles.map(role => (
+                <div key={role.id}
+                  className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-colors"
+                  style={{ opacity: role.isActive ? 1 : 0.55 }}>
+                  <div className="flex items-center gap-3">
+                    {/* Color badge */}
+                    <span className="px-2.5 py-1 rounded-full text-xs font-semibold text-white"
+                      style={{ background: role.color }}>
+                      {role.displayName}
+                    </span>
+                    <div>
+                      <p className="text-xs text-slate-400">
+                        Inherits: <span className="font-medium text-slate-600">{role.baseRole.replace(/^P\d+_/, '').replace(/_/g, ' ')}</span>
+                        {' · '}<span className="font-mono text-slate-400">{role.roleKey}</span>
+                      </p>
+                      {role.description && <p className="text-xs text-slate-400 mt-0.5">{role.description}</p>}
+                    </div>
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-1.5">
+                      {/* Active toggle */}
+                      <button onClick={() => toggleRoleActive(role)}
+                        title={role.isActive ? 'Deactivate' : 'Activate'}
+                        className={`px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                          role.isActive
+                            ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100'
+                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                        }`}>
+                        {role.isActive ? 'Active' : 'Inactive'}
+                      </button>
+                      <button onClick={() => { setEditingRole(role); setRoleForm({ displayName: role.displayName, baseRole: role.baseRole, description: role.description || '', color: role.color }); setShowRoleForm(true) }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors">
+                        <Pencil size={13} />
+                      </button>
+                      <button onClick={() => deleteRole(role.id)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Info box */}
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-xs text-amber-800 space-y-1">
+            <p className="font-semibold">How custom roles work:</p>
+            <p>• Custom roles <strong>inherit all permissions</strong> from the built-in role you select</p>
+            <p>• Assign them to users from the Users tab — they appear in the role dropdown</p>
+            <p>• Deactivating a role hides it from new assignments but keeps existing users unaffected</p>
           </div>
         </div>
       )}
