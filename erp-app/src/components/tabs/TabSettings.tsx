@@ -72,6 +72,37 @@ function Toggle({ label, desc, checked, onChange }: {
   )
 }
 
+/** Compress/resize an image file to a base64 data URL (JPEG, max given dimensions) */
+async function compressImage(file: File, maxW: number, maxH: number, quality = 0.85): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('File read failed'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Image load failed'))
+      img.onload = () => {
+        let { width, height } = img
+        // Scale down if needed, keep aspect ratio
+        if (width > maxW || height > maxH) {
+          const scale = Math.min(maxW / width, maxH / height)
+          width  = Math.round(width  * scale)
+          height = Math.round(height * scale)
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width  = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')!
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, width, height)
+        ctx.drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL('image/jpeg', quality))
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function TabSettings({ user }: Props) {
   const isAdmin = canWrite(user.role, 'settings')
   const [sub, setSub] = useState('company')
@@ -399,10 +430,11 @@ export default function TabSettings({ user }: Props) {
                           <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp"
                             onChange={async e => {
                               const file = e.target.files?.[0]; if (!file) return
-                              if (file.size > 5 * 1024 * 1024) { toastError('Image must be under 5 MB'); return }
-                              const reader = new FileReader()
-                              reader.onload = () => setCompany(c => ({ ...c, pdfHeaderDataUrl: String(reader.result) }))
-                              reader.readAsDataURL(file)
+                              if (file.size > 10 * 1024 * 1024) { toastError('Image must be under 10 MB'); return }
+                              try {
+                                const compressed = await compressImage(file, 1600, 300, 0.88)
+                                setCompany(c => ({ ...c, pdfHeaderDataUrl: compressed }))
+                              } catch { toastError('Could not process image') }
                               e.target.value = ''
                             }} />
                         </label>
@@ -420,10 +452,11 @@ export default function TabSettings({ user }: Props) {
                       <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.webp"
                         onChange={async e => {
                           const file = e.target.files?.[0]; if (!file) return
-                          if (file.size > 5 * 1024 * 1024) { toastError('Image must be under 5 MB'); return }
-                          const reader = new FileReader()
-                          reader.onload = () => setCompany(c => ({ ...c, pdfHeaderDataUrl: String(reader.result) }))
-                          reader.readAsDataURL(file)
+                          if (file.size > 10 * 1024 * 1024) { toastError('Image must be under 10 MB'); return }
+                          try {
+                            const compressed = await compressImage(file, 1600, 300, 0.88)
+                            setCompany(c => ({ ...c, pdfHeaderDataUrl: compressed }))
+                          } catch { toastError('Could not process image') }
                           e.target.value = ''
                         }} />
                     )}
@@ -461,10 +494,11 @@ export default function TabSettings({ user }: Props) {
                       <input type="file" className="hidden" accept=".png,.jpg,.jpeg,.svg,.webp"
                         onChange={async e => {
                           const file = e.target.files?.[0]; if (!file) return
-                          if (file.size > 2 * 1024 * 1024) { toastError('Logo must be under 2 MB'); return }
-                          const reader = new FileReader()
-                          reader.onload = () => setCompany(c => ({ ...c, logoDataUrl: String(reader.result) }))
-                          reader.readAsDataURL(file)
+                          if (file.size > 5 * 1024 * 1024) { toastError('Logo must be under 5 MB'); return }
+                          try {
+                            const compressed = await compressImage(file, 400, 400, 0.9)
+                            setCompany(c => ({ ...c, logoDataUrl: compressed }))
+                          } catch { toastError('Could not process image') }
                           e.target.value = ''
                         }} />
                     )}
