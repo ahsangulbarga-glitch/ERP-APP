@@ -127,9 +127,40 @@ export async function POST(req: NextRequest) {
 
   await writeAuditLog({ tenantId: session.user.tenantId, userId: session.user.id, userRole: session.user.role, targetTable: 'quotations', rowId: quotation.id, action: 'CREATE', newValue: JSON.stringify(body), relatedId: { type: 'quotation', id: quotation.id } })
 
-  // Auto-update customer lastActivityDate (best-effort)
-  if (customerName) {
-    db.customer.updateMany({ where: { customerName }, data: { lastActivityDate: new Date() } }).catch(console.error)
+  // Auto-create or update customer record when a quotation is created
+  if (customerName?.trim()) {
+    try {
+      const existing = await db.customer.findFirst({ where: { customerName: customerName.trim() } })
+      if (existing) {
+        // Update stats on existing customer
+        await db.customer.update({
+          where: { id: existing.id },
+          data: {
+            lastActivityDate:  new Date(),
+            totalRfq:          existing.totalRfq + 1,
+            totalValueQuoted:  existing.totalValueQuoted + (parseFloat(amountSar) || 0),
+            // Link KAE if not already assigned
+            ...(kaeAssignedId && !existing.assignedKaeId ? { assignedKaeId: kaeAssignedId } : {}),
+          },
+        })
+      } else {
+        // Create new customer record automatically
+        await db.customer.create({
+          data: {
+            customerName:     customerName.trim(),
+            status:           'Active',
+            firstActivityDate: new Date(),
+            lastActivityDate:  new Date(),
+            totalRfq:          1,
+            totalValueQuoted:  parseFloat(amountSar) || 0,
+            assignedKaeId:     kaeAssignedId || undefined,
+            createdBy:         session.user.id,
+          },
+        })
+      }
+    } catch (e) {
+      console.error('[quotation POST] customer auto-create failed:', e)
+    }
   }
 
   return NextResponse.json(quotation, { status: 201 })
@@ -237,10 +268,38 @@ export async function PATCH(req: NextRequest) {
     await db.quotation.update({ where: { id }, data: { poNumber } }).catch(() => {})
   }
 
-  // Auto-update customer lastActivityDate (best-effort, don't block response)
-  const nameForActivity = updates.customerName || existing.customerName
+  // Auto-create or update customer when quotation is saved/edited
+  const nameForActivity = (updates.customerName || existing.customerName)?.trim()
   if (nameForActivity) {
-    db.customer.updateMany({ where: { customerName: nameForActivity }, data: { lastActivityDate: new Date() } }).catch(console.error)
+    try {
+      const existingCust = await db.customer.findFirst({ where: { customerName: nameForActivity } })
+      if (existingCust) {
+        await db.customer.update({
+          where: { id: existingCust.id },
+          data: {
+            lastActivityDate: new Date(),
+            // Link KAE if not already assigned and this update includes one
+            ...(updates.kaeAssignedId && !existingCust.assignedKaeId ? { assignedKaeId: updates.kaeAssignedId } : {}),
+          },
+        })
+      } else {
+        // New customer name on this quotation — create the customer record
+        await db.customer.create({
+          data: {
+            customerName:      nameForActivity,
+            status:            'Active',
+            firstActivityDate: new Date(),
+            lastActivityDate:  new Date(),
+            totalRfq:          1,
+            totalValueQuoted:  Number(updates.amountSar ?? existing.amountSar) || 0,
+            assignedKaeId:     updates.kaeAssignedId || existing.kaeAssignedId || undefined,
+            createdBy:         session.user.id,
+          },
+        })
+      }
+    } catch (e) {
+      console.error('[quotation PATCH] customer auto-create failed:', e)
+    }
   }
 
   return NextResponse.json(updated)
