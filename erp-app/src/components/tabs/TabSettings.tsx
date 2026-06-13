@@ -168,8 +168,11 @@ function PreparedByEditor({
     <div className="rounded-xl border border-slate-200 overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
         <div>
-          <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">📋 Prepared By Contacts</span>
-          <p className="text-xs text-slate-500 mt-0.5">Shown in the "Prepared by" table at the bottom of every quotation PDF.</p>
+          <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">📋 Prepared By Contacts (Override)</span>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Each quotation PDF <strong className="text-slate-600">auto-fills</strong> from the assigned KAE + their manager.
+            Add contacts here only to <em>override</em> that for all quotations.
+          </p>
         </div>
         {isAdmin && !adding && (
           <button onClick={() => { setAdding(true); setEditIdx(null); setForm(blank()) }}
@@ -223,10 +226,10 @@ function PreparedByEditor({
 
         {/* Contacts list */}
         {contacts.length === 0 && !adding ? (
-          <p className="text-xs text-slate-400 italic py-3 text-center">
-            No contacts yet — using hardcoded defaults from the PDF template.{' '}
-            {isAdmin && <button onClick={() => { setAdding(true); setEditIdx(null); setForm(blank()) }} className="text-indigo-500 underline">Add one</button>}
-          </p>
+          <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-blue-700 text-center">
+            ✅ <strong>Auto mode:</strong> each quotation PDF will show the assigned KAE + their manager automatically.
+            {isAdmin && <><br /><button onClick={() => { setAdding(true); setEditIdx(null); setForm(blank()) }} className="text-indigo-600 underline mt-1 inline-block">Add override contacts</button> to use fixed names instead.</>}
+          </div>
         ) : (
           contacts.map((c, i) => (
             <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-100 bg-white">

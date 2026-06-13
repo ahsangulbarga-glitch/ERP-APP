@@ -33,11 +33,26 @@ export async function GET(
   const { id } = await params
   const tenantId = session.user.tenantId
 
+  const ROLE_TITLE: Record<string, string> = {
+    P1_CEO:                  'CEO',
+    P2_ADMIN:                'Admin',
+    P3_KEY_ACCOUNT_MANAGER:  'Key Account Manager',
+    P4_REGIONAL_MANAGER:     'Divisional Manager',
+    P5_SALES_MANAGER:        'Sales Manager',
+    P6_KEY_ACCOUNT_ENGINEER: 'Key Account Engineer',
+    P7_INSIDE_SALES_ENGINEER:'Inside Sales Engineer',
+    P8_ACCOUNTANT:           'Accountant',
+    P9_HR:                   'HR',
+    P10_LOGISTICS_MANAGER:   'Logistics Manager',
+    P11_PURCHASE_MANAGER:    'Purchase Manager',
+    P12_WAREHOUSE_MANAGER:   'Warehouse Manager',
+  }
+
   const [quotation, companySetting] = await Promise.all([
     db.quotation.findFirst({
       where: { id },
       include: {
-        kaeAssigned: { select: { id: true, name: true, email: true } },
+        kaeAssigned: { select: { id: true, name: true, email: true, role: true, managerId: true } },
         lineItems: { orderBy: { sNo: 'asc' } },
       },
     }),
@@ -61,12 +76,52 @@ export async function GET(
   const arabicFontNormal  = toDataUrl('Amiri-Regular.ttf','font/truetype')
   const arabicFontBold    = toDataUrl('Amiri-Regular.ttf','font/truetype')
 
-  // Parse prepared-by contacts
+  // ── Auto-build Prepared By from KAE + their manager ───────────────────────
+  // Priority: manually configured settings contacts → auto from KAE/manager
   let preparedByContacts: { name: string; title: string; email: string; contact: string }[] | null = null
+
+  // 1. Check if manually configured contacts exist in settings
   try {
     const raw = (companySetting as any)?.preparedByContacts
-    if (raw) preparedByContacts = JSON.parse(raw)
-  } catch { /* use defaults */ }
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed) && parsed.length > 0) preparedByContacts = parsed
+    }
+  } catch { /* ignore */ }
+
+  // 2. If no manual contacts, auto-build from KAE + manager
+  if (!preparedByContacts && quotation.kaeAssigned) {
+    const kae = quotation.kaeAssigned as any
+    const autoContacts: typeof preparedByContacts = []
+
+    // Add KAE
+    autoContacts.push({
+      name:    kae.name  || '',
+      title:   ROLE_TITLE[kae.role] || kae.role || 'Sales Engineer',
+      email:   kae.email || '',
+      contact: '',
+    })
+
+    // Add manager if linked
+    if (kae.managerId) {
+      try {
+        const manager = await db.user.findFirst({
+          where: { id: kae.managerId },
+          select: { name: true, email: true, role: true },
+        })
+        if (manager) {
+          autoContacts.push({
+            name:    manager.name  || '',
+            title:   ROLE_TITLE[manager.role] || manager.role || 'Manager',
+            email:   manager.email || '',
+            contact: '',
+          })
+        }
+      } catch { /* skip manager */ }
+    }
+
+    preparedByContacts = autoContacts
+  }
 
   // Collect all PDF customisation fields (pass undefined if not set so PDF uses defaults)
   const cs = companySetting as any
