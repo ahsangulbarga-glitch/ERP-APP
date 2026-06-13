@@ -57,7 +57,7 @@ const blankHeader = (): Omit<QuotationLineItem, 'id' | 'quotationId'> => ({
 })
 
 const blankForm = () => ({
-  qtRef: '', qtnDate: '', customerName: '', projectName: '', amountSar: '',
+  qtRef: '', qtnDate: new Date().toISOString().split('T')[0], customerName: '', projectName: '', amountSar: '',
   discount: '0', discountType: 'SAR', hideDiscount: false, status: 'Open', kaeAssignedId: '', clientContactName: '',
   clientContactDetails: '', remarks: '', poNumber: '',
   subject: '', rfqCode: '', application: '', poBox: '',

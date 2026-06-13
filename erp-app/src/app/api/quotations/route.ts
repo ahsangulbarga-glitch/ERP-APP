@@ -3,6 +3,8 @@ import { requireTenant } from '@/lib/tenant'
 import { canRead, canWrite, isKAERestrictedToOwnAccounts } from '@/lib/rbac'
 import { writeAuditLog } from '@/lib/audit'
 import { notifyQuoteStatusChange } from '@/lib/notifications'
+import { checkPlanLimit } from '@/lib/planLimits'
+import prisma from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   const result = await requireTenant()
@@ -41,8 +43,15 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const result = await requireTenant()
   if ('error' in result) return result.error
-  const { db, session } = result
+  const { db, session, tenantId } = result
   if (!canWrite(session.user.role, 'quotations')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  // Check plan quotation limit before creating
+  const tenantRecord = await prisma.tenant.findUnique({ where: { id: tenantId } })
+  if (tenantRecord) {
+    const limitError = await checkPlanLimit(prisma, tenantId, tenantRecord, 'quotations')
+    if (limitError) return NextResponse.json({ error: limitError }, { status: 402 })
+  }
 
   const body = await req.json()
   const {
@@ -55,13 +64,17 @@ export async function POST(req: NextRequest) {
 
   if (!qtRef || !qtRef.trim()) return NextResponse.json({ error: 'QT Reference is required' }, { status: 400 })
 
+  // Parse and validate qtnDate — fall back to today if missing or invalid
+  const parsedDate = qtnDate ? new Date(qtnDate) : new Date()
+  const safeDate   = isNaN(parsedDate.getTime()) ? new Date() : parsedDate
+
   const existing = await db.quotation.findFirst({ where: { qtRef: qtRef.trim() } })
   if (existing) return NextResponse.json({ error: `QT Reference "${qtRef}" already exists` }, { status: 409 })
 
   const quotation = await db.quotation.create({
     data: {
       qtRef: qtRef.trim(),
-      qtnDate: new Date(qtnDate),
+      qtnDate: safeDate,
       customerName,
       projectName,
       amountSar: parseFloat(amountSar) || 0,
