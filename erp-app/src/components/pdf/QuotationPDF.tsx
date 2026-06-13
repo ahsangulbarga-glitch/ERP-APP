@@ -319,12 +319,12 @@ export interface QuotationForPDF {
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE HEADER  — full-width DLIT logo (already contains Arabic text)
 // ─────────────────────────────────────────────────────────────────────────────
-function PageHeader({ logoDataUrl }: { logoDataUrl?: string | null; arabicHeaderUrl?: string | null }) {
+function PageHeader({ logoDataUrl, companyName }: { logoDataUrl?: string | null; arabicHeaderUrl?: string | null; companyName?: string }) {
   return (
     <View style={s.pageHeaderRow} fixed>
       {logoDataUrl
         ? <Image src={logoDataUrl} style={s.logoImg} />
-        : <Text style={{ fontFamily: 'Times-Bold', fontSize: 11 }}>DYNAMIC LINE INTERNATIONAL TRADING</Text>
+        : <Text style={{ fontFamily: 'Times-Bold', fontSize: 11 }}>{companyName || 'YOUR COMPANY NAME'}</Text>
       }
     </View>
   )
@@ -356,7 +356,7 @@ function CoverPage({ q, logoDataUrl, arabicHeaderUrl, pdfSettings = {} }: { q: Q
 
   return (
     <Page size="A4" style={s.page}>
-      <PageHeader logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl} />
+      <PageHeader logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl} companyName={pdfSettings?.companyFullName} />
 
       {/* Title */}
       <Text style={s.offerTitle}>COMMERCIAL OFFER</Text>
@@ -528,7 +528,7 @@ function ItemsPage({
 
   return (
     <Page size="A4" style={s.page}>
-      <PageHeader logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl} />
+      <PageHeader logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl} companyName={pdfSettings?.companyFullName} />
 
       {/* Items table */}
       <View style={s.tblWrap}>

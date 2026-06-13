@@ -93,11 +93,12 @@ export async function GET(
     customerStreet,
   }
 
-  // PDF header priority: pdfHeaderDataUrl (full letterhead) → logoDataUrl → static fallback
+  // PDF header priority: tenant's pdfHeaderDataUrl (full letterhead) → tenant's logoDataUrl → null (renders company name as text)
+  // Do NOT fall back to the hardcoded DLIT image — that's tenant-specific and wrong for SaaS
   const logoDataUrl: string | null =
-    (companySetting as any)?.pdfHeaderDataUrl ??
-    (companySetting as any)?.logoDataUrl ??
-    toDataUrl('dlit-header-full.png', 'image/png')
+    (companySetting as any)?.pdfHeaderDataUrl ||
+    (companySetting as any)?.logoDataUrl ||
+    null
   const arabicHeaderUrl   = null
   const arabicFontNormal  = toDataUrl('Amiri-Regular.ttf','font/truetype')
   const arabicFontBold    = toDataUrl('Amiri-Regular.ttf','font/truetype')

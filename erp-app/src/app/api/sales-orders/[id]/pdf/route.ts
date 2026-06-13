@@ -48,11 +48,12 @@ export async function GET(
     deliveryDate: so.deliveryDate instanceof Date ? so.deliveryDate.toISOString() : (so.deliveryDate ?? null),
   }
 
-  // PDF header priority: pdfHeaderDataUrl → logoDataUrl → static fallback
+  // PDF header priority: pdfHeaderDataUrl → logoDataUrl → null (renders company name as text)
+  // Do NOT fall back to the hardcoded DLIT image — wrong for SaaS multi-tenant
   const logoDataUrl: string | null =
-    (companySetting as any)?.pdfHeaderDataUrl ??
-    (companySetting as any)?.logoDataUrl ??
-    toDataUrl('dlit-header-full.png', 'image/png')
+    (companySetting as any)?.pdfHeaderDataUrl ||
+    (companySetting as any)?.logoDataUrl ||
+    null
 
   try {
     const { renderToBuffer } = await import('@react-pdf/renderer')
