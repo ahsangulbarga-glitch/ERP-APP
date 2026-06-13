@@ -2,16 +2,21 @@
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { Shield, ChevronLeft } from 'lucide-react'
+import { Shield, ChevronLeft, Globe, ArrowRight, Eye, EyeOff } from 'lucide-react'
 
 export default function LoginForm() {
   const router = useRouter()
+  const [workspace, setWorkspace] = useState('')
   const [email, setEmail] = useState('')
   const [pin, setPin] = useState(['', '', '', ''])
   const [useMasterKey, setUseMasterKey] = useState(false)
   const [masterKey, setMasterKey] = useState('')
+  const [authMode, setAuthMode] = useState<'pin' | 'password'>('pin')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [step, setStep] = useState<'workspace' | 'credentials'>('workspace')
   const pinRefs = [useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null), useRef<HTMLInputElement>(null)]
 
   const handlePinChange = (index: number, value: string) => {
@@ -38,6 +43,15 @@ export default function LoginForm() {
     pinRefs[realIdx].current?.focus()
   }
 
+  const handleWorkspaceNext = () => {
+    setError('')
+    const isSuperAdminEmail = email && email.endsWith('@superadmin') // handled server-side
+    if (!workspace.trim() && step === 'workspace') {
+      // Allow proceeding without workspace — server will reject if needed
+    }
+    setStep('credentials')
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -49,11 +63,17 @@ export default function LoginForm() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, pin: useMasterKey ? undefined : pinStr, masterKey: useMasterKey ? masterKey : undefined }),
+        body: JSON.stringify({
+          email,
+          pin: useMasterKey ? undefined : pinStr,
+          masterKey: useMasterKey ? masterKey : undefined,
+          workspaceSlug: workspace.trim() || undefined,
+        }),
       })
       const data = await res.json()
       if (!res.ok) return setError(data.error || 'Login failed')
-      router.push('/dashboard')
+      if (data.isSuperAdmin) router.push('/dashboard')
+      else router.push('/dashboard')
     } catch {
       setError('Network error. Please try again.')
     } finally {
@@ -93,6 +113,26 @@ export default function LoginForm() {
           style={{ background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(20px)' }}>
 
           <div className="p-6 space-y-4">
+            {/* Workspace slug */}
+            <div>
+              <label className="form-label flex items-center gap-1.5">
+                <Globe size={11} className="text-slate-400" /> Workspace
+              </label>
+              <div className="flex rounded-lg overflow-hidden border border-slate-200 focus-within:border-blue-400 transition-colors">
+                <span className="bg-slate-50 px-3 py-2.5 text-sm text-slate-400 border-r border-slate-200 whitespace-nowrap select-none">
+                  app.com/
+                </span>
+                <input
+                  value={workspace}
+                  onChange={e => setWorkspace(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                  className="flex-1 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none bg-white"
+                  placeholder="your-workspace"
+                  autoComplete="off"
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Leave blank if using a subdomain or logging in as platform admin.</p>
+            </div>
+
             {/* Email */}
             <div>
               <label className="form-label">Email Address</label>
@@ -199,9 +239,22 @@ export default function LoginForm() {
           </div>
         </div>
 
-        <p className="text-center text-slate-500 text-xs mt-5">
-          Secure access · ERP System v2
-        </p>
+        {/* ── Create new workspace CTA ── */}
+        <div className="mt-5 rounded-xl border border-white/10 p-4 text-center"
+          style={{ background: 'rgba(99,102,241,0.06)' }}>
+          <p className="text-sm font-medium text-slate-300 mb-0.5">New to the platform?</p>
+          <p className="text-xs text-slate-500 mb-3">Create your company workspace in 2 minutes — free 14-day trial.</p>
+          <button
+            onClick={() => router.push('/signup')}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all"
+            style={{ background: 'rgba(99,102,241,0.2)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.35)' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.35)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.2)')}>
+            <Globe size={14} />
+            Create a New Workspace
+            <ArrowRight size={14} />
+          </button>
+        </div>
       </div>
     </div>
   )
