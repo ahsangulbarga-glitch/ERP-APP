@@ -41,7 +41,7 @@ export async function GET(
         lineItems: { orderBy: { sNo: 'asc' } },
       },
     }),
-    db.companySetting.findFirst({ where: { tenantId }, select: { logoDataUrl: true, pdfHeaderDataUrl: true } }).catch(() => null),
+    db.companySetting.findFirst({ where: { tenantId }, select: { logoDataUrl: true, pdfHeaderDataUrl: true, preparedByContacts: true } }).catch(() => null),
   ])
 
   if (!quotation) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -51,9 +51,16 @@ export async function GET(
     (companySetting as any)?.pdfHeaderDataUrl ??
     (companySetting as any)?.logoDataUrl ??
     toDataUrl('dlit-header-full.png', 'image/png')
-  const arabicHeaderUrl   = null   // no longer needed — combined into logoDataUrl
+  const arabicHeaderUrl   = null
   const arabicFontNormal  = toDataUrl('Amiri-Regular.ttf','font/truetype')
   const arabicFontBold    = toDataUrl('Amiri-Regular.ttf','font/truetype')
+
+  // Parse prepared-by contacts from company settings (fall back to null = use PDF defaults)
+  let preparedByContacts: { name: string; title: string; email: string; contact: string }[] | null = null
+  try {
+    const raw = (companySetting as any)?.preparedByContacts
+    if (raw) preparedByContacts = JSON.parse(raw)
+  } catch { /* use defaults */ }
 
   try {
     const { renderToBuffer, Font } = await import('@react-pdf/renderer')
@@ -72,7 +79,7 @@ export async function GET(
     // Disable font hyphenation for Arabic (prevents broken syllables)
     Font.registerHyphenationCallback(word => [word])
 
-    const element = createElement(QuotationPDF, { quotation, logoDataUrl, arabicHeaderUrl })
+    const element = createElement(QuotationPDF, { quotation, logoDataUrl, arabicHeaderUrl, preparedByContacts })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const buffer: Buffer = await renderToBuffer(element as any)
 

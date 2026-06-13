@@ -481,8 +481,10 @@ function CoverPage({ q, logoDataUrl, arabicHeaderUrl }: { q: QuotationForPDF; lo
 // ─────────────────────────────────────────────────────────────────────────────
 // PAGE 2+ — LINE ITEMS
 // ─────────────────────────────────────────────────────────────────────────────
+type PreparedContact = { name: string; title?: string; email: string; contact: string }
+
 function ItemsPage({
-  q, subtotal, discount, net, logoDataUrl, arabicHeaderUrl,
+  q, subtotal, discount, net, logoDataUrl, arabicHeaderUrl, preparedByContacts,
 }: {
   q: QuotationForPDF
   subtotal: number
@@ -490,16 +492,23 @@ function ItemsPage({
   net: number
   logoDataUrl?: string | null
   arabicHeaderUrl?: string | null
+  preparedByContacts?: PreparedContact[] | null
 }) {
-  const preparedBy = [
-    {
-      name:    q.kaeAssigned?.name ? `${q.kaeAssigned.name} - Key Account Executive` : 'Muhammed Nufair - Inside Sales Engineer',
-      email:   q.kaeAssigned?.email || 'sales3@dynamiclinevalves.com',
-      contact: '+971 52 616 5825',
-    },
-    { name: 'Umar Khan - Sales & Project Engineer', email: 'sales1@dynamicline.com.sa', contact: '+966 50 240 9228' },
-    { name: 'Ahsan Farooq - Sales Manager',         email: 'ahsan@dynamicline.com.sa',  contact: '+966 50 240 9228' },
-  ]
+  // Use custom contacts from settings if provided; otherwise fall back to hardcoded defaults
+  const preparedBy: PreparedContact[] = (preparedByContacts && preparedByContacts.length > 0)
+    ? preparedByContacts
+    : [
+        {
+          name:    q.kaeAssigned?.name
+            ? `${q.kaeAssigned.name}${q.kaeAssigned.name ? '' : ' - Key Account Executive'}`
+            : 'Muhammed Nufair',
+          title:   'Inside Sales Engineer',
+          email:   q.kaeAssigned?.email || 'sales3@dynamiclinevalves.com',
+          contact: '+971 52 616 5825',
+        },
+        { name: 'Umar Khan',   title: 'Sales & Project Engineer', email: 'sales1@dynamicline.com.sa', contact: '+966 50 240 9228' },
+        { name: 'Ahsan Farooq', title: 'Sales Manager',           email: 'ahsan@dynamicline.com.sa',  contact: '+966 50 240 9228' },
+      ]
 
   return (
     <Page size="A4" style={s.page}>
@@ -632,7 +641,7 @@ function ItemsPage({
       </View>
       {preparedBy.map((p, i) => (
         <View key={i} style={s.prepRow}>
-          <Text style={[s.prepCell, { flex: 1 }]}>Mr. {p.name}</Text>
+          <Text style={[s.prepCell, { flex: 1 }]}>{p.name}{p.title ? ` - ${p.title}` : ''}</Text>
           <Text style={[s.prepCell, { width: 168 }]}>{p.email}</Text>
           <Text style={[s.prepCellLast, { width: 96 }]}>{p.contact}</Text>
         </View>
@@ -650,10 +659,12 @@ export function QuotationPDF({
   quotation: q,
   logoDataUrl,
   arabicHeaderUrl,
+  preparedByContacts,
 }: {
   quotation: QuotationForPDF
   logoDataUrl?: string | null
   arabicHeaderUrl?: string | null
+  preparedByContacts?: PreparedContact[] | null
 }) {
   const items    = q.lineItems.filter(li => li.itemType !== 'header')
   const subtotal = items.reduce((sum, li) => sum + Number(li.amount), 0) || Number(q.amountSar)
@@ -669,8 +680,10 @@ export function QuotationPDF({
       author="Dynamic Line International Trading"
       subject={q.subject || q.projectName}
     >
-      <CoverPage    q={q} logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl} />
-      <ItemsPage    q={q} subtotal={subtotal} discount={discount} net={net} logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl} />
+      <CoverPage q={q} logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl} />
+      <ItemsPage q={q} subtotal={subtotal} discount={discount} net={net}
+        logoDataUrl={logoDataUrl} arabicHeaderUrl={arabicHeaderUrl}
+        preparedByContacts={preparedByContacts} />
     </Document>
   )
 }

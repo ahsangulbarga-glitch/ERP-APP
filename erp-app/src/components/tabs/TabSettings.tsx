@@ -138,6 +138,130 @@ async function processUpload(file: File, maxW: number, maxH: number, quality = 0
 // Keep alias for logo uploads
 const compressImage = processUpload
 
+// ── Prepared By Contacts Editor ───────────────────────────────────────────────
+type PreparedContact = { name: string; title: string; email: string; contact: string }
+
+function PreparedByEditor({
+  contacts, onChange, isAdmin,
+}: { contacts: PreparedContact[]; onChange: (c: PreparedContact[]) => void; isAdmin: boolean }) {
+  const blank = (): PreparedContact => ({ name: '', title: '', email: '', contact: '' })
+  const [adding, setAdding] = useState(false)
+  const [form,   setForm]   = useState<PreparedContact>(blank())
+  const [editIdx, setEditIdx] = useState<number | null>(null)
+
+  const startEdit = (i: number) => { setEditIdx(i); setForm({ ...contacts[i] }); setAdding(true) }
+  const remove    = (i: number) => onChange(contacts.filter((_, idx) => idx !== i))
+  const moveUp    = (i: number) => { if (i === 0) return; const c = [...contacts]; [c[i-1],c[i]] = [c[i],c[i-1]]; onChange(c) }
+  const moveDown  = (i: number) => { if (i === contacts.length-1) return; const c = [...contacts]; [c[i],c[i+1]] = [c[i+1],c[i]]; onChange(c) }
+
+  const save = () => {
+    if (!form.name.trim()) return
+    if (editIdx !== null) {
+      const c = [...contacts]; c[editIdx] = form; onChange(c)
+    } else {
+      onChange([...contacts, form])
+    }
+    setAdding(false); setEditIdx(null); setForm(blank())
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5" style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+        <div>
+          <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">📋 Prepared By Contacts</span>
+          <p className="text-xs text-slate-500 mt-0.5">Shown in the "Prepared by" table at the bottom of every quotation PDF.</p>
+        </div>
+        {isAdmin && !adding && (
+          <button onClick={() => { setAdding(true); setEditIdx(null); setForm(blank()) }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+            style={{ background: '#6366f1' }}>
+            <Plus size={12} /> Add Contact
+          </button>
+        )}
+      </div>
+
+      <div className="p-3 space-y-2">
+        {/* Add / Edit form */}
+        {adding && isAdmin && (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 space-y-2">
+            <p className="text-xs font-semibold text-indigo-700">{editIdx !== null ? 'Edit Contact' : 'New Contact'}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">Full Name *</label>
+                <input className="form-input text-xs" placeholder="Mr. Ahmed Al-Sayed"
+                  value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">Job Title</label>
+                <input className="form-input text-xs" placeholder="Key Account Engineer"
+                  value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">Email</label>
+                <input className="form-input text-xs" placeholder="ahmed@company.com"
+                  value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">Phone / Contact</label>
+                <input className="form-input text-xs" placeholder="+966 50 000 0000"
+                  value={form.contact} onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} />
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={save}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                style={{ background: '#6366f1' }}>
+                <Check size={11} /> {editIdx !== null ? 'Update' : 'Add'}
+              </button>
+              <button onClick={() => { setAdding(false); setEditIdx(null); setForm(blank()) }}
+                className="px-3 py-1.5 rounded-lg text-xs text-slate-500 border border-slate-200 hover:bg-slate-50">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Contacts list */}
+        {contacts.length === 0 && !adding ? (
+          <p className="text-xs text-slate-400 italic py-3 text-center">
+            No contacts yet — using hardcoded defaults from the PDF template.{' '}
+            {isAdmin && <button onClick={() => { setAdding(true); setEditIdx(null); setForm(blank()) }} className="text-indigo-500 underline">Add one</button>}
+          </p>
+        ) : (
+          contacts.map((c, i) => (
+            <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-100 bg-white">
+              <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                <p className="text-xs font-semibold text-slate-800 truncate">{c.name}{c.title ? ` — ${c.title}` : ''}</p>
+                <p className="text-xs text-slate-500 truncate">{c.email}{c.contact ? ` · ${c.contact}` : ''}</p>
+              </div>
+              {isAdmin && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => moveUp(i)} title="Move up"
+                    className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" disabled={i === 0}>
+                    <ChevronUp size={12} />
+                  </button>
+                  <button onClick={() => moveDown(i)} title="Move down"
+                    className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100" disabled={i === contacts.length - 1}>
+                    <ChevronDown size={12} />
+                  </button>
+                  <button onClick={() => startEdit(i)} title="Edit"
+                    className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50">
+                    <Pencil size={12} />
+                  </button>
+                  <button onClick={() => remove(i)} title="Remove"
+                    className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50">
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function TabSettings({ user }: Props) {
   const isAdmin = canWrite(user.role, 'settings')
   const [sub, setSub] = useState('company')
@@ -543,6 +667,13 @@ export default function TabSettings({ user }: Props) {
 
             </div>
           </div>
+
+          {/* ── Prepared By Contacts ── */}
+          <PreparedByEditor
+            contacts={(() => { try { return JSON.parse((company as any).preparedByContacts || '[]') } catch { return [] } })()}
+            onChange={contacts => setCompany(c => ({ ...c, preparedByContacts: JSON.stringify(contacts) } as any))}
+            isAdmin={isAdmin}
+          />
 
           {isAdmin && (
             <button onClick={saveCompany} disabled={cSaving}

@@ -87,8 +87,9 @@ export async function PATCH(req: NextRequest) {
       ...(data.country        !== undefined && { country:        data.country }),
       ...(data.taxName        !== undefined && { taxName:        data.taxName }),
       ...(data.taxNumberLabel !== undefined && { taxNumberLabel: data.taxNumberLabel }),
-      ...(data.logoDataUrl       !== undefined && { logoDataUrl:       data.logoDataUrl    ?? null }),
-      ...(data.pdfHeaderDataUrl  !== undefined && { pdfHeaderDataUrl:  data.pdfHeaderDataUrl ?? null }),
+      ...(data.logoDataUrl          !== undefined && { logoDataUrl:          data.logoDataUrl       ?? null }),
+      ...(data.pdfHeaderDataUrl     !== undefined && { pdfHeaderDataUrl:     data.pdfHeaderDataUrl  ?? null }),
+      ...(data.preparedByContacts   !== undefined && { preparedByContacts:   data.preparedByContacts !== null ? JSON.stringify(data.preparedByContacts) : null }),
       updatedBy: session.user.id,
     },
     create: {
@@ -106,8 +107,9 @@ export async function PATCH(req: NextRequest) {
       country:        data.country        ?? 'Saudi Arabia',
       taxName:        data.taxName        ?? 'VAT',
       taxNumberLabel: data.taxNumberLabel ?? 'VAT Number',
-      logoDataUrl:      data.logoDataUrl      ?? null,
-      pdfHeaderDataUrl: data.pdfHeaderDataUrl ?? null,
+      logoDataUrl:         data.logoDataUrl         ?? null,
+      pdfHeaderDataUrl:    data.pdfHeaderDataUrl    ?? null,
+      preparedByContacts:  data.preparedByContacts !== undefined ? JSON.stringify(data.preparedByContacts) : null,
       updatedBy:        session.user.id,
     },
   })

@@ -676,8 +676,9 @@ model CompanySetting {
   taxName          String   @default("VAT")            // e.g. "VAT", "GST", "Sales Tax"
   taxNumberLabel   String   @default("VAT Number")     // e.g. "TRN", "GST No.", "EIN"
   // ── Branding ─────────────────────────────────────────────────────────────────
-  logoDataUrl      String?                   // base64 data-URL of company logo
-  pdfHeaderDataUrl String?                   // base64 data-URL of full PDF letterhead header image
+  logoDataUrl         String?                // base64 data-URL of company logo
+  pdfHeaderDataUrl    String?                // base64 data-URL of full PDF letterhead header image
+  preparedByContacts  String?                // JSON: [{name,title,email,contact}] — shown in quotation PDF footer
   updatedAt        DateTime @updatedAt
   updatedBy        String?
 }
