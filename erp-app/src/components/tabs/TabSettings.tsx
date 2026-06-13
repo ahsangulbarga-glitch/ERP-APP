@@ -1408,5 +1408,6 @@ export default function TabSettings({ user }: Props) {
           </div>
         </div>
       )}
+    </div>
   )
 }
